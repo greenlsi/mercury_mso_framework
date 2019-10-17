@@ -1,4 +1,4 @@
-from mercury import Mercury
+from ..mercury import Mercury
 import random
 from mercury.fog_model import ResourceManagerConfiguration, IdleActivePowerModel
 from mercury.fog_model import MaximumDispatchingStrategy, MinimumDispatchingStrategy, \

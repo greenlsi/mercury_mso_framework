@@ -18,7 +18,7 @@ The code is fully written in Python 3, enabling you to override pre-defined mode
 - Clone this repository in your PC: `git clone https://github.com/greenlsi/mercury_mso_framework.git`
 - Once cloned, move to the M&amp;S&amp;O framework folder: `cd mercury_mso_framework`
 - Install all the required Python packages: `pip install -r requirements.txt`
-- Create a `results` folder. This folder will hold the simulation results of your trial
+- Create the folder that will hold the simulation results of your trial: `mkdir results`
 - Let's run the example!: type `python3 samples/sample_mercury.py` and let it simulate
 
 You are more than welcome to read through the `sample_mercury.py` file and tune different parameters to see their effect on the simulation outcome.
