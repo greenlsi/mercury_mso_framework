@@ -9,7 +9,7 @@ With Mercury, you can explore real-time aspects of fog computing, such as percei
 The code is fully written in Python 3, enabling you to override pre-defined models using your favorite Python packages (NumPy, pandas, TensorFlow, etc.). Mercury is built on top of [xDEVS](https://github.com/jlrisco/xdevs), a DEVS-compliant simulator.
 
 # Requirements
-- Python 3.5 or greater
+- Python 3.6 or greater
 - All the Python packages listed on the `requirements.txt` file
 - The simulator has been tested on Linux and MacOS machines. Compatibility with Windows is not granted
 
@@ -19,7 +19,7 @@ The code is fully written in Python 3, enabling you to override pre-defined mode
 - Once cloned, move to the M&amp;S&amp;O framework folder: `cd mercury_mso_framework`
 - Install all the required Python packages: `pip install -r requirements.txt`
 - Create the folder that will hold the simulation results of your trial: `mkdir results`
-- Let's run the example!: type `python3 samples/sample_mercury.py` and let it simulate
+- Let's run the example!: type `python3 sample_mercury.py` and let it simulate
 
 You are more than welcome to read through the `sample_mercury.py` file and tune different parameters to see their effect on the simulation outcome.
 If you have any question regarding this preliminary version of Mercury, feel free to [send an email](mailto:r.cardenas@upm.es) with your request.

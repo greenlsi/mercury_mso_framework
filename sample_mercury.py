@@ -26,7 +26,7 @@ sim_time = 30
 max_guard_time = 1
 
 # Reports root file
-transducer_root = './results_example'
+transducer_root = './results'
 
 # Visualization stuff
 alpha = 0.1
