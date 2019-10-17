@@ -1,4 +1,4 @@
-from ..mercury import Mercury
+from mercury import Mercury
 import random
 from mercury.fog_model import ResourceManagerConfiguration, IdleActivePowerModel
 from mercury.fog_model import MaximumDispatchingStrategy, MinimumDispatchingStrategy, \
@@ -26,7 +26,7 @@ sim_time = 30
 max_guard_time = 1
 
 # Reports root file
-transducer_root = './results'
+transducer_root = './results_example'
 
 # Visualization stuff
 alpha = 0.1
