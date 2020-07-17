@@ -1,1 +1,1 @@
-from .ap import AccessPoint
+from .ap import AccessPoint, AccessPointConfiguration

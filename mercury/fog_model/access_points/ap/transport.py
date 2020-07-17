@@ -1,10 +1,10 @@
 import logging
 from xdevs.models import Port
-from .internal_interfaces import ConnectedUEList
+from ...network import EnableChannels
 from ...common import Stateless, logging_overhead
-from ...common.packet.network import NetworkPacket
-from ...common.packet.application.federation_management import NewSDNPath
-from ...common.packet.application.service import GetDataCenterRequest, GetDataCenterResponse
+from ...common.packet.packet import NetworkPacket
+from ...common.packet.apps.federation_management import NewSDNPath
+from ...common.packet.apps.service import GetDataCenterRequest, GetDataCenterResponse
 
 
 LOGGING_OVERHEAD = "    "
@@ -18,7 +18,7 @@ class Transport(Stateless):
         self.ue_connected = list()
 
         self.input_new_sdn_path = Port(NewSDNPath, name + '_input_new_sdn_path')
-        self.input_connected_ue_list = Port(ConnectedUEList, name + '_input_connected_ue_list')
+        self.input_connected_ue_list = Port(EnableChannels, name + '_input_connected_ue_list')
         self.input_service_routing_request = Port(GetDataCenterRequest, name + '_input_service_routing_request')
         self.input_radio = Port(NetworkPacket, name + '_input_radio')
         self.input_crosshaul = Port(NetworkPacket, name + '_input_crosshaul')
@@ -46,12 +46,12 @@ class Transport(Stateless):
 
     def _process_new_connected_ue_list(self):
         if self.input_connected_ue_list:
-            ue_list = self.input_connected_ue_list.values[-1].ues_list
+            ue_list = self.input_connected_ue_list.get().nodes_to
             self.ue_connected = [ue for ue in ue_list]
 
     def _process_new_sdn_path(self):
         if self.input_new_sdn_path:
-            sdn_path = self.input_new_sdn_path.values[-1]
+            sdn_path = self.input_new_sdn_path.get()
             overhead = logging_overhead(self._clock, LOGGING_OVERHEAD)
             logging.info(overhead + '%s<---SDN Controller: new SDN path' % self.ap_id)
             self.service_routing = {service_id: dc for service_id, dc in sdn_path.service_route.items()}

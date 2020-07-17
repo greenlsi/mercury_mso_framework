@@ -1,18 +1,18 @@
 from xdevs.models import Port
 from ....common import Stateless
-from ....common.packet.application.service import ServiceConfiguration, OngoingSessionRequestPacket
+from ....common.packet.apps.service import ServiceConfiguration, OngoingSessionRequestPacket
 
 
 class ServiceDataGenerator(Stateless):
-    """
-    Service Data Generator xDEVS module
+    def __init__(self, name: str, ue_id: str, service_config: ServiceConfiguration, t_initial: float):
+        """
+        Service Data Generator xDEVS module
 
-    :param str name: name of the xDEVS module
-    :param str ue_id: User Equipment ID
-    :param  ServiceConfiguration service_config: service configuration
-    :param float t_initial: initial back off time before creating the first package
-    """
-    def __init__(self, name, ue_id, service_config, t_initial):
+        :param name: name of the xDEVS module
+        :param ue_id: User Equipment ID
+        :param service_config: service configuration
+        :param t_initial: initial back off time before creating the first package
+        """
         self.ue_id = ue_id
         # Unwrap configuration parameters
         self.service_id = service_config.service_id
@@ -24,7 +24,7 @@ class ServiceDataGenerator(Stateless):
         super().__init__(t_initial + self.packaging_time, name)
 
         # I/O ports
-        self.output_session_request = Port(OngoingSessionRequestPacket, name + '_output_session_request')
+        self.output_session_request = Port(OngoingSessionRequestPacket, 'output_session_request')
         self.add_out_port(self.output_session_request)
 
     def check_in_ports(self):

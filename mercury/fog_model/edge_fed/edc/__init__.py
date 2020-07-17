@@ -1,1 +1,1 @@
-from .edc import EdgeDataCenter, EdgeDataCenterReport
+from .edc import EdgeDataCenter

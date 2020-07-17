@@ -3,12 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def plot_ue_service_delay(file_path, x_axis='time', y_axis='delay', alpha=1):
-    data = pd.read_csv(file_path, delimiter=';')
-    time = data[x_axis].values
-    delay = apply_ema(data[y_axis].values, alpha)
-
-    plt.plot(time, delay)
+def plot_ue_service_delay(time, ue_id, delay, alpha=1):
+    delay_ = apply_ema(delay, alpha)
+    plt.plot(time, delay_)
     plt.xlabel('time [s]', fontsize=12)
     plt.ylabel('perceived delay [s]', fontsize=12)
     title = 'Service Delay Perceived by User Equipments'
@@ -18,16 +15,12 @@ def plot_ue_service_delay(file_path, x_axis='time', y_axis='delay', alpha=1):
     plt.show()
 
 
-def plot_bw(file_path, x_axis='time', bw_axis='bandwidth', rate_axis='rate', efficiency_axis='efficiency',
-            link='Uplink', alpha=1):
-    data = pd.read_csv(file_path, delimiter=';')
-    time = data[x_axis].values
-    bandwidth = apply_ema(data[bw_axis].values, alpha)
-    rate = apply_ema(data[rate_axis].values, alpha)
-    efficiency = apply_ema(data[efficiency_axis].values, alpha)
-
-    plt.plot(time, bandwidth)
-    plt.plot(time, rate)
+def plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, link='Uplink', alpha=1):
+    bandwidth_ = apply_ema(bandwidth, alpha)
+    rate_ = apply_ema(rate, alpha)
+    efficiency_ = apply_ema(efficiency, alpha)
+    plt.plot(time, bandwidth_)
+    plt.plot(time, rate_)
     plt.xlabel('time [s]', fontsize=12)
     plt.legend(['bandwidth [Hz]', 'bitrate [bps]'], prop={'size': 12})
     title = '{} bandwidth and bit rate'.format(link)
@@ -36,7 +29,7 @@ def plot_bw(file_path, x_axis='time', bw_axis='bandwidth', rate_axis='rate', eff
     plt.title(title)
     plt.show()
 
-    plt.plot(time, efficiency)
+    plt.plot(time, efficiency_)
     plt.xlabel('time [s]', fontsize=12)
     plt.ylabel('spectral efficiency [bps/Hz]', fontsize=12)
     title = '{} spectral efficiency'.format(link)
@@ -46,25 +39,23 @@ def plot_bw(file_path, x_axis='time', bw_axis='bandwidth', rate_axis='rate', eff
     plt.show()
 
 
-def plot_edc_utilization(edc_file_path, stacked=False, alpha=1):
-    data = pd.read_csv(edc_file_path, index_col=False, delimiter=';')
+def plot_edc_utilization(time, edc_id, utilization, stacked=False, alpha=1):
     title = 'Edge Data Centers Utilization Factor'
     if stacked:
         title = 'Stacked ' + title
     graph_data = {
         'xlabel': 'time [s]',
-        'ylabel': 'utilization factor [%]',
+        'ylabel': 'EDC utilization [%]',
         'title': title
     }
     if stacked:
-        stacked_graph(data, 'time', 'overall_std_u', 'edc_id', graph_data, alpha)
+        stacked_graph(time, edc_id, utilization, graph_data, alpha)
     else:
-        multiple_graph(data, 'time', 'overall_std_u', 'edc_id', graph_data, alpha)
+        multiple_graph(time, edc_id, utilization, graph_data, alpha)
 
 
-def plot_edc_power(edc_file_path, stacked=False, alpha=1):
-    data = pd.read_csv(edc_file_path, index_col=False, delimiter=';')
-    title = 'Edge Data Centers Power Consumption'
+def plot_edc_power(time, edc_id, power, stacked=False, alpha=1, nature='Demand'):
+    title = 'Edge Data Centers Power ' + nature
     if stacked:
         title = 'Stacked ' + title
     graph_data = {
@@ -73,24 +64,44 @@ def plot_edc_power(edc_file_path, stacked=False, alpha=1):
         'title': title
     }
     if stacked:
-        stacked_graph(data, 'time', 'overall_power', 'edc_id', graph_data, alpha)
+        stacked_graph(time, edc_id, power, graph_data, alpha)
     else:
-        multiple_graph(data, 'time', 'overall_power', 'edc_id', graph_data, alpha)
+        multiple_graph(time, edc_id, power, graph_data, alpha)
 
 
-def multiple_graph(data, x_column, y_column, class_column, graph_data, alpha=1):
-    class_labels = data[class_column].unique().tolist()
+def plot_edc_energy(time, edc_id, energy, alpha=1):
+    xlabel = 'time [s]'
+    ylabel = 'energy [W·h]'
+    edcs = list(set(edc_id))
+    df = pd.DataFrame(list(zip(time, edc_id, energy)), columns=['time', 'edc_id', 'energy'])
+    for edc_id in edcs:
+        time = df[df['edc_id'] == edc_id].time
+        energy = df[df['edc_id'] == edc_id].energy
+        energy_ = apply_ema(energy, alpha)
+        plt.plot(time, energy_)
+    plt.xlabel(xlabel, fontsize=12)
+    plt.ylabel(ylabel, fontsize=12)
+    title = 'Edge Data Centers Stored Energy'
+    if alpha < 1:
+        title += ' (EMA,alpha={})'.format(alpha)
+    plt.title(title)
+    plt.legend(edcs, prop={'size': 12})
+    plt.show()
+
+
+def multiple_graph(time, classes, y_values, graph_data, alpha=1):
+    class_labels = list(set(classes))
+    class_labels.sort()
     n_labels = len(class_labels)
-    x = data[x_column].values.tolist()
 
-    data_array = np.zeros((len(x), len(class_labels)))
+    data_array = np.zeros((len(y_values), len(class_labels)))
     for i in range(n_labels):
-        for index, row in data.iterrows():
-            if row[class_column] == class_labels[i]:
-                data_array[index:, i] = row[y_column]
+        for j in range(len(time)):
+            if classes[j] == class_labels[i]:
+                data_array[j:, i] = y_values[j]
     for i in reversed(range(n_labels)):
-        data_array[:, i] = apply_ema(data_array[:, i], alpha)
-        plt.step(x, data_array[:, i], where='post')
+        data_array[:, i] = np.asarray(apply_ema(data_array[:, i].tolist(), alpha))
+        plt.step(time, data_array[:, i], where='post')
     plt.xlabel(graph_data['xlabel'], fontsize=12)
     plt.ylabel(graph_data['ylabel'], fontsize=12)
     plt.legend(class_labels, prop={'size': 12})
@@ -98,25 +109,25 @@ def multiple_graph(data, x_column, y_column, class_column, graph_data, alpha=1):
         graph_data['title'] += ' (EMA,alpha={})'.format(alpha)
     plt.title(graph_data['title'])
     plt.show()
+    return plt
 
 
-def stacked_graph(data, x_column, y_column, class_column, graph_data, alpha=1):
-    class_labels = data[class_column].unique().tolist()
+def stacked_graph(time, classes, y_values, graph_data, alpha=1):
+    class_labels = list(set(classes))
     n_labels = len(class_labels)
-    x = data[x_column].values.tolist()
 
-    data_array = np.zeros((len(x), len(class_labels)))
+    data_array = np.zeros((len(y_values), len(class_labels)))
     for i in range(n_labels):
         last_value = 0
-        for index, row in data.iterrows():
-            if row[class_column] == class_labels[i]:
-                increment = row[y_column] - last_value
-                data_array[index:, i:n_labels] += increment
-                last_value = row[y_column]
+        for j in range(len(time)):
+            if classes[j] == class_labels[i]:
+                increment = y_values[j] - last_value
+                data_array[j:, i:n_labels] += increment
+                last_value = y_values[j]
 
     for i in reversed(range(n_labels)):
-        data_array[:, i] = apply_ema(data_array[:, i], alpha)
-        plt.step(x, data_array[:, i], where='post')
+        data_array[:, i] = np.asarray(apply_ema(data_array[:, i].tolist(), alpha))
+        plt.step(time, data_array[:, i], where='post')
     plt.xlabel(graph_data['xlabel'], fontsize=12)
     plt.ylabel(graph_data['ylabel'], fontsize=12)
     if alpha < 1:
@@ -127,7 +138,7 @@ def stacked_graph(data, x_column, y_column, class_column, graph_data, alpha=1):
 
 
 def delay_summary(ue_file_path):
-    data = pd.read_csv(ue_file_path)
+    data = pd.read_csv(ue_file_path, sep=";")
     delay = data['delay'].values
     mean_delay = np.mean(delay)
     peak_delay = np.max(delay)
@@ -136,7 +147,7 @@ def delay_summary(ue_file_path):
 
 
 def power_summary(edc_file_path):
-    data = pd.read_csv(edc_file_path, index_col=False)
+    data = pd.read_csv(edc_file_path, index_col=False, sep=";")
     edc_ids = data['edc_id'].unique().tolist()
     n_edcs = len(edc_ids)
     max_power = 0
@@ -148,7 +159,7 @@ def power_summary(edc_file_path):
         t_prev = row['time']
         for i in range(n_edcs):
             if row['edc_id'] == edc_ids[i]:
-                power[i] = row['overall_power']
+                power[i] = row['power_demand']
         max_power = max(max_power, np.sum(power))
     mean_power /= t_prev
     print("Mean power: {} Watts".format(mean_power))
@@ -157,8 +168,8 @@ def power_summary(edc_file_path):
 
 def apply_ema(data, alpha):
     assert 0 < alpha <= 1
-    aux = data.copy()
+    aux = np.asarray(data.copy())
     if alpha < 1:
         for i in range(1, aux.shape[0]):
             aux[i] = (1 - alpha) * aux[i - 1] + alpha * aux[i]
-    return aux
+    return aux.tolist()

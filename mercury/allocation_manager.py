@@ -315,23 +315,26 @@ class AllocationManager:
         palette2 = sns.color_palette(palette="deep", n_colors=n_edcs)
         palette3 = sns.color_palette(palette=None, n_colors=n_edcs)
         sns.scatterplot(self.data['x'], self.data['y'], hue=clusters_data_real, palette=palette1, legend=False)
-        sns.scatterplot(self.aps[:, 0], self.aps[:, 1], marker='*', s=500, hue=clusters_ap_real, palette=palette2, legend=False)
-        sns.scatterplot(self.edcs[:, 0], self.edcs[:, 1], hue=range(n_edcs), palette=palette3, marker='o', s=500)
+        sns.scatterplot(self.aps[:, 0], self.aps[:, 1], marker='s', s=200, hue=clusters_ap_real, palette=palette2, legend=False)
+        sns.scatterplot(self.edcs[:, 0], self.edcs[:, 1], hue=range(n_edcs), palette=palette3, marker='o', s=500, legend='brief')
 
         L = plt.legend().get_texts()
         for i in range(len(L)):
             L[i].set_text("edc_" + str(i))
             L[i].set_fontsize(20)
         plt.title("APs and EDCs' location", fontsize=20)
+        plt.title("San Francisco Scenario", fontsize=20)
         plt.ylabel("y [m]", fontsize=16)
         plt.xlabel("x [m]", fontsize=16)
         plt.show()
 
+    def store_scenario(self, dirpath: str = './'):
+        df = pd.DataFrame(columns=['ap_id', 'x', 'y'], index=None)
+        for i in range(len(self.aps)):
+            df = df.append({'ap_id': 'ap_{}'.format(i), 'x': self.aps[i][0], 'y': self.aps[i][1]}, ignore_index=True)
+        df.to_csv(dirpath + 'ap_location.csv', index=False)
 
-if __name__ == '__main__':
-    filepath = '../samples/simpat/data/final_data.csv'
-    df = pd.read_csv(filepath, index_col=None)
-    a = AllocationManager(df, plot=True)
-    a.allocate_aps(plot=True)
-    a.allocate_edcs()
-    a.plot_scenario()
+        df = pd.DataFrame(columns=['edc_id', 'x', 'y'], index=None)
+        for i in range(len(self.edcs)):
+            df = df.append({'edc_id': 'edc_{}'.format(i), 'x': self.edcs[i][0], 'y': self.edcs[i][1]}, ignore_index=True)
+        df.to_csv(dirpath + 'edc_location.csv', index=False)

@@ -1,50 +1,62 @@
+from typing import List
 from xdevs.models import Coupled, Port
-from ...common.iot_devices import UserEquipmentConfiguration
-from ...common.mobility import NewLocation
-from ...common.radio import RadioConfiguration
-from ...common.packet.physical import PhysicalPacket
-from ...common.packet.network import NetworkPacketConfiguration
-from ...common.packet.application.ran import RadioAccessNetworkConfiguration
-from ...common.packet.application.service import ServiceDelayReport
-from ...common.packet.application.ran.ran_access import NewDownLinkMCS
+from ...common.packet.packet import PhysicalPacket, NetworkPacket, NetworkPacketConfiguration
+from ...common.packet.apps.ran import RadioAccessNetworkConfiguration
+from ...common.packet.apps.service import ServiceDelayReport
 from .ue_antenna import UserEquipmentAntenna
-from .ue_mobility import UserEquipmentMobility
 from .service_mux import UEServiceMux
 from .service import Service
 from .access_manager import AccessManager
 
+from ...common.packet.apps.service import ServiceConfiguration
+from ...network.node import TransceiverConfiguration, NodeConfiguration
+
+
+class UserEquipmentConfiguration:
+    def __init__(self, ue_id: str, service_config_list: List[ServiceConfiguration],
+                 radio_trx: TransceiverConfiguration = None, mobility_name: str = None, **kwargs):
+        """
+
+        :param ue_id:
+        :param service_config_list:
+        :param radio_trx:
+        :param mobility_name:
+        :param kwargs:
+        """
+        self.ue_id = ue_id
+        for service_config in service_config_list:
+            assert isinstance(service_config, ServiceConfiguration)
+        self.service_config_list = service_config_list
+        self.radio_node = NodeConfiguration(ue_id, radio_trx, mobility_name, **kwargs)
+        self.ue_location = self.radio_node.initial_location
+
 
 class UserEquipment(Coupled):
-    def __init__(self, name, ue_config, rac_config, network_config, radio_config, t_initial=0):
+    def __init__(self, name: str, ue_config: UserEquipmentConfiguration, rac_config: RadioAccessNetworkConfiguration,
+                 network_config: NetworkPacketConfiguration, t_initial: float = 0):
         """
         User Equipment xDEVS model
-
-        :param str name: xDEVS model name
-        :param UserEquipmentConfiguration ue_config: User Equipment Configuration
-        :param RadioAccessNetworkConfiguration rac_config: Radio Access Network service packets configuration
-        :param NetworkPacketConfiguration network_config: Network packets configuration
-        :param RadioConfiguration radio_config: Radio Channels configuration
-        :param float t_initial: Initial guard time in order to avoid identical simultaneous behavior between UEs
+        :param name: xDEVS model name
+        :param ue_config: User Equipment Configuration
+        :param rac_config: Radio Access Network service packets configuration
+        :param network_config: Network packets configuration
+        :param t_initial: Initial guard time in order to avoid identical simultaneous behavior between UEs
         """
         super().__init__(name)
 
         # Unpack configuration parameters
         ue_id = ue_config.ue_id
         service_config_list = ue_config.service_config_list
-        ue_mobility_config = ue_config.ue_mobility_config
-        antenna_config = ue_config.antenna_config
         service_ids = [service_config.service_id for service_config in service_config_list]
 
         self.ue_id = ue_id
 
         # Define and add components
-        mobility = UserEquipmentMobility(name + '_mobility', ue_id, ue_mobility_config)
-        antenna = UserEquipmentAntenna(name + '_antenna', ue_id, network_config, radio_config, antenna_config)
+        antenna = UserEquipmentAntenna(name + '_antenna', ue_id, network_config)
         access_manager = AccessManager(name + '_access_manager', ue_id, rac_config)
         service_mux = UEServiceMux(name + '_service_mux', service_ids)
         services = [Service(name + service.service_id, ue_id, service, network_config, t_initial)
                     for service in service_config_list]
-        self.add_component(mobility)
         self.add_component(antenna)
         self.add_component(access_manager)
         self.add_component(service_mux)
@@ -62,15 +74,13 @@ class UserEquipment(Coupled):
         self.add_out_port(self.output_radio_control_ul)
         self.add_out_port(self.output_radio_transport_ul)
 
-        self.output_new_location = Port(NewLocation, name + '_output_new_location')
-        self.output_service_delay_report = Port(ServiceDelayReport, name + '_output_service_delay_report')
-        self.output_dl_mcs = Port(NewDownLinkMCS, name + '_output_new_dl_mcs')
-        self.add_out_port(self.output_new_location)
+        self.output_repeat_location = Port(str, 'output_repeat_location')
+        self.output_service_delay_report = Port(ServiceDelayReport, 'output_service_delay_report')
+        self.add_out_port(self.output_repeat_location)
         self.add_out_port(self.output_service_delay_report)
-        self.add_out_port(self.output_dl_mcs)
 
         self.external_couplings_antenna(antenna)
-        self.external_couplings_mobility(mobility)
+        self.external_couplings_access(access_manager)
         for service in services:
             self.external_couplings_service(service)
 
@@ -78,38 +88,23 @@ class UserEquipment(Coupled):
         self.internal_couplings_antenna_mux(antenna, service_mux)
         for service in services:
             self.internal_couplings_antenna_service(antenna, service)
-            self.internal_coupling_service_mobility(service, mobility)
             self.internal_couplings_access_service(access_manager, service)
             self.internal_couplings_mux_service(service_mux, service)
 
-    def external_couplings_antenna(self, antenna):
-        """
-        :param UserEquipmentAntenna antenna:
-        """
+    def external_couplings_antenna(self, antenna: UserEquipmentAntenna):
         self.add_coupling(self.input_radio_bc, antenna.input_radio_bc)
         self.add_coupling(self.input_radio_control_dl, antenna.input_radio_control_dl)
         self.add_coupling(self.input_radio_transport_dl, antenna.input_radio_transport_dl)
         self.add_coupling(antenna.output_radio_control_ul, self.output_radio_control_ul)
         self.add_coupling(antenna.output_radio_transport_ul, self.output_radio_transport_ul)
-        self.add_coupling(antenna.output_dl_mcs, self.output_dl_mcs)
 
-    def external_couplings_mobility(self, mobility):
-        """
-        :param UserEquipmentMobility mobility:
-        """
-        self.add_coupling(mobility.output_new_location, self.output_new_location)
-
-    def external_couplings_service(self, service):
-        """
-        :param Service service:
-        """
+    def external_couplings_service(self, service: Service):
         self.add_coupling(service.output_service_delay_report, self.output_service_delay_report)
 
-    def internal_couplings_antenna_access(self, antenna, access_manager):
-        """
-        :param UserEquipmentAntenna antenna:
-        :param AccessManager access_manager:
-        """
+    def external_couplings_access(self, access: AccessManager):
+        self.add_coupling(access.output_repeat_location, self.output_repeat_location)
+
+    def internal_couplings_antenna_access(self, antenna: UserEquipmentAntenna, access_manager: AccessManager):
         self.add_coupling(antenna.output_pss, access_manager.input_pss)
         self.add_coupling(antenna.output_access_response, access_manager.input_access_response)
         self.add_coupling(antenna.output_disconnect_response, access_manager.input_disconnect_response)
@@ -123,39 +118,52 @@ class UserEquipment(Coupled):
         self.add_coupling(access_manager.output_connected_ap, antenna.input_connected_ap)
         self.add_coupling(access_manager.output_antenna_powered, antenna.input_antenna_powered)
 
-    def internal_couplings_antenna_service(self, antenna, service):
-        """
-        :param UserEquipmentAntenna antenna:
-        :param Service service:
-        """
+    def internal_couplings_antenna_service(self, antenna: UserEquipmentAntenna, service: Service):
         self.add_coupling(service.output_network, antenna.input_service)
 
-    def internal_couplings_antenna_mux(self, antenna, service_mux):
-        """
-        :param UserEquipmentAntenna antenna:
-        :param UEServiceMux service_mux:
-        """
+    def internal_couplings_antenna_mux(self, antenna: UserEquipmentAntenna, service_mux: UEServiceMux):
         self.add_coupling(antenna.output_service, service_mux.input_network)
 
-    def internal_couplings_mux_service(self, service_mux, service):
-        """
-        :param UEServiceMux service_mux:
-        :param Service service:
-        """
+    def internal_couplings_mux_service(self, service_mux: UEServiceMux, service: Service):
         service_id = service.service_id
         self.add_coupling(service_mux.outputs_network[service_id], service.input_network)
 
-    def internal_couplings_access_service(self, access_manager, service):
-        """
-        :param AccessManager access_manager:
-        :param Service service:
-        """
+    def internal_couplings_access_service(self, access_manager: AccessManager, service: Service):
         self.add_coupling(access_manager.output_connected_ap, service.input_connected_ap)
         self.add_coupling(service.output_service_required, access_manager.input_service_required)
 
-    def internal_coupling_service_mobility(self, service, mobility):
-        """
-        :param Service service:
-        :param UserEquipmentMobility mobility:
-        """
-        self.add_coupling(service.output_service_required, mobility.input_service_required)
+
+class UserEquipmentLite(Coupled):
+    def __init__(self, name: str, ue_config: UserEquipmentConfiguration,
+                 network_config: NetworkPacketConfiguration, core_id: str, t_initial: float = 0):
+        super().__init__(name)
+
+        ue_id = ue_config.ue_id
+        service_config_list = ue_config.service_config_list
+        service_ids = [service_config.service_id for service_config in service_config_list]
+
+        self.ue_id = ue_id
+
+        # Define and add components
+        services = [Service(name + service.service_id, ue_id, service, network_config, t_initial, lite_id=core_id)
+                    for service in service_config_list]
+        [self.add_component(service) for service in services]
+
+        self.input_network = Port(NetworkPacket, 'input_network')
+        self.output_network = Port(NetworkPacket, 'output_network')
+        self.output_service_delay_report = Port(ServiceDelayReport, 'output_service_delay_report')
+        self.add_in_port(self.input_network)
+        self.add_out_port(self.output_network)
+        self.add_out_port(self.output_service_delay_report)
+
+        if len(services) > 1:  # More than one service -> we add a multiplexer
+            service_mux = UEServiceMux(name + '_service_mux', service_ids)
+            self.add_component(service_mux)
+            self.add_coupling(self.input_network, service_mux.input_network)
+            for service in services:
+                self.add_coupling(service_mux.outputs_network[service.service_id], service.input_network)
+        else:  # Otherwise, multiplexer is not required
+            self.add_coupling(self.input_network, services[0].input_network)
+        for service in services:
+            self.add_coupling(service.output_network, self.output_network)
+            self.add_coupling(service.output_service_delay_report, self.output_service_delay_report)

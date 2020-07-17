@@ -1,4 +1,4 @@
-from .stateless import Stateless
+from .fsm import Stateless
 from abc import ABC, abstractmethod
 
 

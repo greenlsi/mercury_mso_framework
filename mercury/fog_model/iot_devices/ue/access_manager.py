@@ -3,10 +3,10 @@ from math import ceil
 from xdevs.models import Port, INFINITY
 from ...common import FiniteStateMachine, logging_overhead
 from .internal_interfaces import ServiceRequired, ConnectedAccessPoint, ExtendedPSS, AntennaPowered
-from ...common.packet.application.ran import RadioAccessNetworkConfiguration
-from ...common.packet.application.ran.ran_access import AccessRequest, AccessResponse, RadioResourceControl, \
+from ...common.packet.apps.ran import RadioAccessNetworkConfiguration
+from ...common.packet.apps.ran.ran_access import AccessRequest, AccessResponse, RadioResourceControl, \
     DisconnectRequest, DisconnectResponse
-from ...common.packet.application.ran.ran_handover import HandOverStarted, HandOverReady, HandOverFinished, \
+from ...common.packet.apps.ran.ran_handover import HandOverStarted, HandOverReady, HandOverFinished, \
     HandOverResponse
 
 PHASE_DISCONNECTED = 'disconnected'
@@ -33,7 +33,7 @@ class AccessManager(FiniteStateMachine):
     def __init__(self, name, ue_id, rac_config):
         # unwrap RAN configuration parameters
         self.header = rac_config.header
-        self.signaling_window = rac_config.pss_period * 2
+        self.signaling_window = rac_config.pss_period * 2 if rac_config.pss_period > 0 else 1
         self.rrc_period = rac_config.rrc_period
         self.timeout = rac_config.timeout
 
@@ -46,19 +46,20 @@ class AccessManager(FiniteStateMachine):
         self.new_ap_id = None
         self.resource_list = dict()
 
-        self.input_service_required = Port(ServiceRequired, name + '_input_service_required')
-        self.input_pss = Port(ExtendedPSS, name + '_input_pss')
-        self.input_access_response = Port(AccessResponse, name + '_input_access_response')
-        self.input_disconnect_response = Port(DisconnectResponse, name + '_input_disconnect_response')
-        self.input_ho_started = Port(HandOverStarted, name + '_input_ho_started')
-        self.input_ho_finished = Port(HandOverFinished, name + '_input_ho_finished')
-        self.output_access_request = Port(AccessRequest, name + '_output_access_request')
-        self.output_disconnect_request = Port(DisconnectRequest, name + '_output_disconnect_request')
-        self.output_rrc = Port(RadioResourceControl, name + '_output_rrc')
-        self.output_ho_ready = Port(HandOverReady, name + '_output_ho_ready')
-        self.output_ho_response = Port(HandOverResponse, name + '_output_ho_response')
-        self.output_connected_ap = Port(ConnectedAccessPoint, name + '_output_connected_ap')
-        self.output_antenna_powered = Port(AntennaPowered, name + '_output_antenna_powered')
+        self.input_service_required = Port(ServiceRequired, 'input_service_required')
+        self.input_pss = Port(ExtendedPSS, 'input_pss')
+        self.input_access_response = Port(AccessResponse, 'input_access_response')
+        self.input_disconnect_response = Port(DisconnectResponse, 'input_disconnect_response')
+        self.input_ho_started = Port(HandOverStarted, 'input_ho_started')
+        self.input_ho_finished = Port(HandOverFinished, 'input_ho_finished')
+        self.output_access_request = Port(AccessRequest, 'output_access_request')
+        self.output_disconnect_request = Port(DisconnectRequest, 'output_disconnect_request')
+        self.output_rrc = Port(RadioResourceControl, 'output_rrc')
+        self.output_ho_ready = Port(HandOverReady, 'output_ho_ready')
+        self.output_ho_response = Port(HandOverResponse, 'output_ho_response')
+        self.output_connected_ap = Port(ConnectedAccessPoint, 'output_connected_ap')
+        self.output_antenna_powered = Port(AntennaPowered, 'output_antenna_powered')
+        self.output_repeat_location = Port(str, 'output_repeat_location')
 
         # FSM stuff
         int_table = {
@@ -91,7 +92,8 @@ class AccessManager(FiniteStateMachine):
         initial_state = PHASE_DISCONNECTED
         initial_timeout = INFINITY
 
-        super().__init__(ACCESS_MANAGER_PHASES, int_table, ext_table, lambda_table, initial_state, initial_timeout)
+        super().__init__(ACCESS_MANAGER_PHASES, int_table, ext_table,
+                         lambda_table, initial_state, initial_timeout, name)
 
         self.add_in_port(self.input_service_required)
         self.add_in_port(self.input_pss)
@@ -106,6 +108,7 @@ class AccessManager(FiniteStateMachine):
         self.add_out_port(self.output_ho_response)
         self.add_out_port(self.output_connected_ap)
         self.add_out_port(self.output_antenna_powered)
+        self.add_out_port(self.output_repeat_location)
 
     @staticmethod
     def internal_phase_disconnected():
@@ -148,6 +151,7 @@ class AccessManager(FiniteStateMachine):
             overhead = logging_overhead(self._clock, LOGGING_OVERHEAD)
             logging.info(overhead + "%s requires to be connected. Proceeding to sniff APs" % self.ue_id)
             self.add_msg_to_queue(self.output_antenna_powered, AntennaPowered(True))
+            self.add_msg_to_queue(self.output_repeat_location, self.ue_id)
             return PHASE_TO_SNIFF, 0
 
     def external_phase_to_sniff(self):
@@ -323,15 +327,13 @@ class AccessManager(FiniteStateMachine):
             service_id = job.service_id
             required = job.required
             if not required:
-                try:
+                if service_id in self.services_required:
                     self.services_required.remove(service_id)
-                except ValueError:
-                    pass
             elif service_id not in self.services_required:
                 self.services_required.append(service_id)
 
     def _next_connected_sigma(self):
-        try:
-            return ceil(self._clock / self.rrc_period) * self.rrc_period - self._clock
-        except ZeroDivisionError:
+        if self.rrc_period == 0:
             return 0
+        else:
+            return ceil(self._clock / self.rrc_period) * self.rrc_period - self._clock

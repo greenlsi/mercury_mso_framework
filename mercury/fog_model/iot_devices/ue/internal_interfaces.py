@@ -1,4 +1,4 @@
-from ...common.packet.application.ran.ran_access import PrimarySynchronizationSignal
+from ...common.packet.apps.ran.ran_access import PrimarySynchronizationSignal
 
 
 class ConnectedAccessPoint:

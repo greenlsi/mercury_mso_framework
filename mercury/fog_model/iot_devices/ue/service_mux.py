@@ -1,7 +1,7 @@
 from xdevs.models import Port
 from mercury.fog_model.common import Multiplexer
-from ...common.packet.application.service import ServiceResponse
-from ...common.packet.network import NetworkPacket
+from ...common.packet.apps.service import ServiceResponse
+from ...common.packet.packet import NetworkPacket
 
 
 class UEServiceMux(Multiplexer):

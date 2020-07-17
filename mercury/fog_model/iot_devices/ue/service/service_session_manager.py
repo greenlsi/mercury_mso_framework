@@ -3,8 +3,8 @@ from collections import deque
 from xdevs.models import Port, INFINITY
 from ....common import FiniteStateMachine, logging_overhead
 from ..internal_interfaces import ServiceRequired, ConnectedAccessPoint
-from ....common.packet.network import NetworkPacket, NetworkPacketConfiguration
-from ....common.packet.application.service import ServiceConfiguration, ServiceDelayReport, CreateSessionRequestPacket,\
+from ....common.packet.packet import NetworkPacket, NetworkPacketConfiguration
+from ....common.packet.apps.service import ServiceConfiguration, ServiceDelayReport, CreateSessionRequestPacket,\
     CreateSessionResponsePacket, RemoveSessionRequestPacket, RemoveSessionResponsePacket, OngoingSessionRequestPacket, \
     OngoingSessionResponsePacket, GetDataCenterRequest, GetDataCenterResponse
 
@@ -29,16 +29,17 @@ NEXT_TIMEOUT = "next_timeout"
 
 
 class ServiceSessionManager(FiniteStateMachine):
-    """
-    Service Session Manager xDEVS module
+    def __init__(self, name: str, ue_id: str, service_config: ServiceConfiguration,
+                 network_config: NetworkPacketConfiguration, t_initial: float, lite_id: str = None):
+        """
+        Service Session Manager xDEVS module
 
-    :param str name: name of the xDEVS module
-    :param str ue_id: User Equipment ID
-    :param ServiceConfiguration service_config: service configuration
-    :param NetworkPacketConfiguration network_config: network configuration
-    :param float t_initial: initial back off time before creating the first package
-    """
-    def __init__(self, name, ue_id, service_config, network_config, t_initial):
+        :param name: name of the xDEVS module
+        :param ue_id: User Equipment ID
+        :param service_config: service configuration
+        :param network_config: network configuration
+        :param t_initial: initial back off time before creating the first package
+        """
         # unwrap configuration parameters
         self.service_id = service_config.service_id
         self.ue_id = ue_id
@@ -53,7 +54,7 @@ class ServiceSessionManager(FiniteStateMachine):
         self.data_buffer = deque()
         self.request_buffer = deque()
 
-        self.connected_ap = None
+        self.connected_ap = lite_id
         self.dc_id = None
 
         self.next_timeout = 0
@@ -93,18 +94,18 @@ class ServiceSessionManager(FiniteStateMachine):
         super().__init__(SESSION_MANAGER_PHASES, int_table, ext_table, lambda_table, initial_state, initial_timeout)
 
         self.input_session_request = Port(OngoingSessionRequestPacket, name + '_input_ongoing_session_request')
-        self.input_connected_ap = Port(ConnectedAccessPoint, name + '_input_connected_ap')
         self.input_network = Port(NetworkPacket, name + '_input_network')
-        self.output_service_required = Port(ServiceRequired, name + '_output_service_required')
         self.output_network = Port(NetworkPacket, name + '_output_network')
         self.output_service_delay_report = Port(ServiceDelayReport, name + '_output_service_delay_report')
-
         self.add_in_port(self.input_session_request)
-        self.add_in_port(self.input_connected_ap)
         self.add_in_port(self.input_network)
-        self.add_out_port(self.output_service_required)
         self.add_out_port(self.output_network)
         self.add_out_port(self.output_service_delay_report)
+
+        self.input_connected_ap = Port(ConnectedAccessPoint, name + '_input_connected_ap')
+        self.output_service_required = Port(ServiceRequired, name + '_output_service_required')
+        self.add_in_port(self.input_connected_ap)
+        self.add_out_port(self.output_service_required)
 
     def internal_phase_session_closed(self):
         # CASE 1: UE is not connected to the RAN
@@ -363,8 +364,8 @@ class ServiceSessionManager(FiniteStateMachine):
                             instant_sent = msg[FIRST_TIME_SENT]
                             times_sent = msg[TIMES_SENT]
                             logging.info(header + "    perceived delay: %.3f seconds" % delay)
-                            delay_report = ServiceDelayReport(ue_id, service_id, instant_generated, instant_sent, instant_received, delay,
-                                                              times_sent)
+                            delay_report = ServiceDelayReport(ue_id, service_id, instant_generated, instant_sent,
+                                                              instant_received, delay, times_sent)
                             self.add_msg_to_queue(self.output_service_delay_report, delay_report)
                             self.next_timeout = self._clock
                         else:

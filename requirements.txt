@@ -7,8 +7,11 @@ pandas
 pyparsing
 python-dateutil
 pytz
-scikit-learn
+scikit-learn~=0.21.2
 scipy
 seaborn
 six
-xdevs
+xdevs~=1.1
+Keras
+tensorflow
+pymysql
