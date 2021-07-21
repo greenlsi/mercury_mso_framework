@@ -1,3 +1,2 @@
-from .fsm import FiniteStateMachine, Stateless
-from .logging_utility import logging_overhead
+from .fsm import ExtendedAtomic, FiniteStateMachine
 from .multiplexer import Multiplexer

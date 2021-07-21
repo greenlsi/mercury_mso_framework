@@ -12,7 +12,7 @@ def dist(a, b, ax=1):
 
 
 class AllocationManager:
-    def __init__(self, data, time_window=60, grid_res=40, plot=False):
+    def __init__(self, data, time_window=60, grid_res=40):
         self.time_window = time_window
         self.grid_res = grid_res
         self.data = data.copy()
@@ -21,28 +21,35 @@ class AllocationManager:
 
         df = data.copy()
         df['epoch'] = np.round(df['epoch'] / self.time_window)
-        x_grid = np.max(df['x'] + 1) / self.grid_res
-        y_grid = np.max(df['y'] + 1) / self.grid_res
+        x_grid = (np.max(df['x']) + 1) / self.grid_res
+        y_grid = (np.max(df['y']) + 1) / self.grid_res
 
         self.grid_step = np.minimum(x_grid, y_grid)
 
-        final_grid = np.zeros([int(np.floor(np.max(df['x']) / self.grid_step)), int(np.floor(np.max(df['y']) / self.grid_step))])
+        self.grid = np.zeros(
+            [int(np.floor(np.max(df['x']) / self.grid_step)), int(np.floor(np.max(df['y']) / self.grid_step))])
+
         for e in df['epoch'].unique():
-            aux_x = np.floor(df.loc[df['epoch'] == e]['x'] / self.grid_step)
-            aux_y = np.floor(df.loc[df['epoch'] == e]['y'] / self.grid_step)
+            aux_x = (df[df['epoch'] == e]['x'] / self.grid_step).apply(np.floor).astype(np.int32)
+            aux_y = (df[df['epoch'] == e]['y'] / self.grid_step).apply(np.floor).astype(np.int32)
             d = pd.DataFrame(data={'aux_x': aux_x, 'aux_y': aux_y})
-            for i in range(final_grid.shape[0]):
-                for j in range(final_grid.shape[1]):
-                    if df.iloc[d.loc[d['aux_x'] == i].loc[d['aux_y'] == j].index.values]['cab_id'].nunique() > final_grid[i, j]:
-                        final_grid[i, j] = df.iloc[d.loc[d['aux_x'] == i].loc[d['aux_y'] == j].index.values]['cab_id'].nunique()
 
-        self.grid = final_grid.copy()
+            for (i, j), reps in d.groupby(list(d.columns)).apply(lambda x: list(x.index)).iteritems():
+                if i >= len(self.grid) or j >= len(self.grid[0]):
+                    continue
 
-        if plot:
+                nu = df.iloc[reps]['cab_id'].nunique()
+                if nu > self.grid[i, j]:
+                    self.grid[i, j] = nu
+
+    def plot_grid(self, title="Scenario density", pdf_path=None):
             plt.figure(figsize=(10, 8))
-            ax = sns.heatmap(data=self.grid.transpose(), annot=True)
+
+            ax = sns.heatmap(data=self.grid.transpose(), annot=True, xticklabels=False, yticklabels=False)
             ax.invert_yaxis()
-            plt.title("Scenario Density", fontsize=20)
+            plt.title(title, fontsize=40)
+            if pdf_path is not None:
+                plt.savefig(pdf_path)
             plt.show()
 
     def allocate_aps(self, plot=False):
@@ -290,7 +297,7 @@ class AllocationManager:
             print(len(E))
         self.edcs = E
 
-    def plot_scenario(self):
+    def plot_scenario(self, title="Scenario", pdf_path=None):
         D_real = np.array(list(zip(self.data['x'], self.data['y'])))
         clusters_data_real = np.zeros(len(D_real))
         clusters_ap_real = np.zeros(len(self.aps))
@@ -314,27 +321,19 @@ class AllocationManager:
         palette1 = sns.color_palette(palette="pastel", n_colors=n_edcs)
         palette2 = sns.color_palette(palette="deep", n_colors=n_edcs)
         palette3 = sns.color_palette(palette=None, n_colors=n_edcs)
-        sns.scatterplot(self.data['x'], self.data['y'], hue=clusters_data_real, palette=palette1, legend=False)
-        sns.scatterplot(self.aps[:, 0], self.aps[:, 1], marker='s', s=200, hue=clusters_ap_real, palette=palette2, legend=False)
-        sns.scatterplot(self.edcs[:, 0], self.edcs[:, 1], hue=range(n_edcs), palette=palette3, marker='o', s=500, legend='brief')
+        sns.scatterplot(x=self.data['x'], y=self.data['y'], hue=clusters_data_real, palette=palette1, legend=False)
+        sns.scatterplot(x=self.aps[:, 0], y=self.aps[:, 1], marker='s', s=200, hue=clusters_ap_real, palette=palette2, legend=False)
+        sns.scatterplot(x=self.edcs[:, 0], y=self.edcs[:, 1], hue=range(n_edcs), palette=palette3, marker='o', s=500, legend=False)
 
         L = plt.legend().get_texts()
         for i in range(len(L)):
             L[i].set_text("edc_" + str(i))
             L[i].set_fontsize(20)
-        plt.title("APs and EDCs' location", fontsize=20)
-        plt.title("San Francisco Scenario", fontsize=20)
-        plt.ylabel("y [m]", fontsize=16)
-        plt.xlabel("x [m]", fontsize=16)
+        plt.title(title, fontsize=40)
+        plt.yticks(rotation=90, fontsize=20)
+        plt.xticks(fontsize=20)
+        plt.ylabel("y [m]", fontsize=30)
+        plt.xlabel("x [m]", fontsize=30)
+        if pdf_path is not None:
+            plt.savefig(pdf_path)
         plt.show()
-
-    def store_scenario(self, dirpath: str = './'):
-        df = pd.DataFrame(columns=['ap_id', 'x', 'y'], index=None)
-        for i in range(len(self.aps)):
-            df = df.append({'ap_id': 'ap_{}'.format(i), 'x': self.aps[i][0], 'y': self.aps[i][1]}, ignore_index=True)
-        df.to_csv(dirpath + 'ap_location.csv', index=False)
-
-        df = pd.DataFrame(columns=['edc_id', 'x', 'y'], index=None)
-        for i in range(len(self.edcs)):
-            df = df.append({'edc_id': 'edc_{}'.format(i), 'x': self.edcs[i][0], 'y': self.edcs[i][1]}, ignore_index=True)
-        df.to_csv(dirpath + 'edc_location.csv', index=False)

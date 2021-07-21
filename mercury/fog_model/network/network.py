@@ -1,118 +1,216 @@
+from mercury.logger import logger as logging, logging_overhead
+from abc import ABC
 from collections import deque
 from copy import deepcopy
-from typing import Tuple, Dict, Union
-from xdevs.models import INFINITY, Port
-
-from .link import LinkConfiguration, Link, NetworkLinkReport, EnableChannels, ChannelShare
-from .node import NodeConfiguration
-from .channel_division import ChannelDivisionFactory
-
-from ..common import Stateless
-from ..common.packet.packet import PhysicalPacket
-from .mobility import NodeLocation
+from typing import Tuple, Dict, Optional
+from xdevs.models import INFINITY, Port, PHASE_PASSIVE
+from mercury.plugin import AbstractFactory
+from mercury.config.network import NodeConfig, LinkConfig
+from mercury.msg.network import PhysicalPacket, NetworkLinkReport, EnableChannels, ChannelShare, NodeLocation
+from .link import Link
+from ..common import ExtendedAtomic
 
 
-class Receiver(Stateless):  # TODO hacerlo multinodo
-    def __init__(self, name: str, node_id: str, max_hops: int = 0):
-        super().__init__(name=name)
-        self.node_id = node_id
-        self.max_hops = max_hops
+class DynamicNodesMobility(ExtendedAtomic):
 
-        self.input = Port(PhysicalPacket, "input")
-        self.output_node = Port(PhysicalPacket, "output_node")
-        self.output_transmitter = Port(PhysicalPacket, "output_transmitter")
-        self.add_in_port(self.input)
-        self.add_out_port(self.output_node)
-        self.add_out_port(self.output_transmitter)
+    LOGGING_OVERHEAD = ""
 
-    def check_in_ports(self):
-        for msg in self.input.values:
-            if msg.node_to == self.node_id:  # Message to this node -> accept it
-                self.add_msg_to_queue(self.output_node, msg)
-            elif msg.node_to is None:  # Broadcast message -> accept copy and re-send message
-                # forward broadcasted message
-                self.forward_message(msg)
-                msg_copy = deepcopy(msg)
-                msg_copy.node_to = self.node_id
-                msg_copy.data.node_to = self.node_id
-                self.add_msg_to_queue(self.output_node, msg)
-            else:  # Message to other node -> forward it
-                self.forward_message(msg)
+    def __init__(self, nodes_config: Optional[Dict[str, NodeConfig]] = None):
+        """
+        :param nodes_config: Initial Dynamic nodes configuration
+        """
+        if nodes_config is None:
+            nodes_config = dict()
+        self.nodes_mobility = {node_id: node_config.node_mobility for node_id, node_config in nodes_config.items()}
 
-    def forward_message(self, msg: PhysicalPacket):
-        if msg.n_hops < self.max_hops:
-            msg.bandwidth = 0
-            msg.frequency = 0
-            msg.mcs = None
-            msg.power = None
-            msg.noise = None
-            msg.n_hops += 1
-            self.add_msg_to_queue(self.output_transmitter, msg)
+        self.nodes_next_change = dict()
+        for node_id, mobility in self.nodes_mobility.items():
+            self.nodes_next_change[node_id] = mobility.next_t
 
-    def process_internal_messages(self):
+        super().__init__(name='dynamic_nodes_mobility')
+
+        self.input_remove_node = Port(str, 'input_remove_node')
+        self.input_create_node = Port(NodeConfig, 'input_create_node')
+        self.output_node_location = Port(NodeLocation, 'output_node_location')
+
+        self.add_in_port(self.input_create_node)
+        self.add_in_port(self.input_remove_node)
+        self.add_out_port(self.output_node_location)
+
+    def deltint_extension(self):
+        for node_id in self.nodes_next_change:
+            if self.nodes_next_change[node_id] <= self._clock:
+                self.nodes_mobility[node_id].advance()
+                self.nodes_next_change[node_id] = self.nodes_mobility[node_id].next_t
+        self.hold_in(PHASE_PASSIVE, self.get_next_timeout())
+
+    def deltext_extension(self, e):
+        overhead = logging_overhead(self._clock, self.LOGGING_OVERHEAD)
+        # Remove dynamic nodes
+        for node_id in self.input_remove_node.values:
+            logging.info(f"{overhead}Node {node_id} removed")
+            self.nodes_next_change.pop(node_id, None)
+            self.nodes_mobility.pop(node_id, None)
+        # Create dynamic nodes
+        for node_config in self.input_create_node.values:
+            node_id = node_config.node_id
+            node_mobility = node_config.node_mobility
+            if node_mobility.next_t != self._clock:
+                logging.error(f"{overhead}time coherence error detected with node {node_id} ({node_mobility.next_t})")
+                raise AssertionError('time coherence error: new node was not created when required')
+            logging.info(f"{overhead}Node {node_id} created (initial location: {node_mobility.location})")
+            self.nodes_mobility[node_id] = node_mobility
+            self.nodes_mobility[node_id].advance()
+            self.nodes_next_change[node_id] = node_mobility.next_t
+
+        self.hold_in(PHASE_PASSIVE, self.get_next_timeout())
+
+    def lambdaf_extension(self):
+        clock = self._clock + self.sigma
+        overhead = logging_overhead(clock, self.LOGGING_OVERHEAD)
+        for node_id in self.nodes_next_change:
+            if self.nodes_next_change[node_id] <= clock:
+                location = self.nodes_mobility[node_id].location
+                logging.info(f"{overhead}{node_id} moved to location {location}")
+                self.output_node_location.add(NodeLocation(node_id, location))
+
+    def initialize(self):
+        self.hold_in(PHASE_PASSIVE, self.get_next_timeout())
+
+    def exit(self):
         pass
 
+    def get_next_event(self, t):
+        return min([next_change - t for next_change in self.nodes_next_change.values()], default=INFINITY)
 
-class Network(Stateless):
-    def __init__(self, name: str, nodes: Dict[str, NodeConfiguration], default_link: LinkConfiguration,
-                 topology: Dict[str, Dict[str, Dict[str, Union[LinkConfiguration, None]]]]):
+    def get_next_timeout(self):
+        return self.get_next_event(self._clock) if self.msg_queue_empty() else 0
+
+
+class Network(ExtendedAtomic):
+    def __init__(self, nodes: Dict[str, NodeConfig], default_link: LinkConfig,
+                 fixed_topology: Optional[Dict[str, Dict[str, Dict[str, Optional[LinkConfig]]]]] = None,
+                 dyn_node_type: str = NodeConfig.TRANSCEIVER, name: Optional[str] = None):
         """
-        Network model for Mercury. It is defined as a directed graph
-        :param name: name of the xDEVS atomic model
-        :param nodes: dictionary containing the ID of every node in the network and their configuration.
-        :param default_link: Default link configuration in case a given link in the topology is None
-        :param topology: directed graph representing the network {node_from: {node_to: link_configuration}}
+        Network model for Mercury. It is defined as a directed graph with fixed nodes.
+        In runtime, dynamic nodes may be created and removed. Dynamic nodes cannot communicated between each other.
+        They can only use fixed nodes to transmit/receive messages.
+
+        :param nodes: dictionary containing the ID of every fixed node in the network and their configuration.
+               Fixed nodes are created at the beginning, and they are never removed. They do not move either.
+        :param default_link: Dynamic link configuration.
+               In case a given link in the fixed topology is None, this link configuration is used as default.
+        :param fixed_topology: directed graph representing the fixed network {node_from: {node_to: link_configuration}}
+               If the link configuration is None, the dynamic link configuration is used by default.
+        :param dyn_node_type: If 'tx', dynamic nodes are transmitters. If 'trx', dynamic nodes are transceivers.
+               If 'rx', dynamic nodes are receivers. By default, dynamic nodes are transceivers.
+        :param name: name of the xDEVS atomic model.
         """
+        assert dyn_node_type in [NodeConfig.TRANSMITTER, NodeConfig.TRANSCEIVER, NodeConfig.RECEIVER]
+        if fixed_topology is None:
+            fixed_topology = dict()
+
+        self.default_link = default_link
+        self.dyn_nodes_type = dyn_node_type
+        self.nodes = nodes
+
         super().__init__(name=name)
 
-        self.input_node_location = Port(NodeLocation, 'input_new_location')
+        self.input_remove_node = Port(str, 'input_remove_node')
+        self.input_new_location = Port(NodeLocation, 'input_new_location')
+        self.input_create_node = Port(NodeConfig, 'input_create_node')
         self.input_data = Port(PhysicalPacket, 'input_data')
+        self.output_data = Port(PhysicalPacket, 'output_data')
         self.output_link_report = Port(NetworkLinkReport, 'output_link_report')
-        self.add_in_port(self.input_node_location)
+        self.add_in_port(self.input_remove_node)
+        self.add_in_port(self.input_new_location)
+        self.add_in_port(self.input_create_node)
         self.add_in_port(self.input_data)
+        self.add_out_port(self.output_data)
         self.add_out_port(self.output_link_report)
 
-        self.links = dict()  # It contains the links of the network
+        self.links = dict()         # It contains the links of the network
         self.tx_overheads = dict()  # It contains the transmission overhead of each link
-        self.buffers = dict()  # it contains the buffers of each transmitter
-        self.outputs_node_to = dict()  # it contains all the output ports
-        for node_from, links in topology.items():
-            self.links[node_from] = dict()
-            self.tx_overheads[node_from] = dict()
-            self.buffers[node_from] = dict()
+        self.buffers = dict()       # it contains the buffers of each transmitter
+
+        for node in self.nodes:
+            self.links[node] = dict()
+            self.tx_overheads[node] = dict()
+            self.buffers[node] = dict()
+
+        for node_from, links in fixed_topology.items():
             for node_to, link_config in links.items():
-                if node_to not in self.outputs_node_to:
-                    self.outputs_node_to[node_to] = Port(PhysicalPacket, 'output_' + node_to)
-                    self.add_out_port(self.outputs_node_to[node_to])
                 conf = link_config if link_config is not None else default_link
                 self.links[node_from][node_to] = Link(nodes[node_from], nodes[node_to], conf)
                 self.tx_overheads[node_from][node_to] = 0
                 self.buffers[node_from][node_to] = deque()
 
-    def clear_state(self):
+    def deltint_extension(self):
         for buffers in self.buffers.values():
             for buffer in buffers.values():
                 while buffer and buffer[0][0] <= self._clock:
                     buffer.popleft()
+        self.hold_in(PHASE_PASSIVE, self.get_next_timeout())
 
-    def check_in_ports(self):
-        for msg in self.input_node_location.values:
+    def deltext_extension(self, e):
+        for node_id in self.input_remove_node.values:
+            self.remove_node(node_id)
+        for node_config in self.input_create_node.values:
+            self.create_node(node_config)
+        for msg in self.input_new_location.values:
             self.process_new_location(msg.node_id, msg.location)
         self.check_extra_ports()
         for msg in self.input_data.values:
             self.process_incoming_message(msg)
+        self.hold_in(PHASE_PASSIVE, self.get_next_timeout())
+
+    def lambdaf_extension(self):
+        clock = self._clock + self.sigma
+        for buffers in self.buffers.values():
+            for node_to, buffer in buffers.items():
+                for time, msg in buffer:
+                    if time > clock:
+                        continue
+                    self.output_data.add(msg)
+
+    def remove_node(self, node_id: str):
+        if self.dyn_nodes_type != NodeConfig.RECEIVER:      # If node is not a receiver, remove links from node
+            if self.links.pop(node_id, None) is not None:
+                self.tx_overheads.pop(node_id)
+                self.buffers.pop(node_id)
+        if self.dyn_nodes_type != NodeConfig.TRANSMITTER:   # If node is not a transmitter, remove links to node
+            for node_from, links in self.links.items():
+                if links.pop(node_id, None) is not None:
+                    self.tx_overheads[node_from].pop(node_id)
+                    self.buffers[node_from].pop(node_id)
+
+    def create_node(self, node_config: NodeConfig):
+        node_id = node_config.node_id
+
+        if self.dyn_nodes_type != NodeConfig.RECEIVER:      # If node is not a receiver, create links from node
+            self.links[node_id] = dict()
+            self.tx_overheads[node_id] = dict()
+            self.buffers[node_id] = dict()
+            for node_to in self.nodes:
+                self.links[node_id][node_to] = Link(node_config, self.nodes[node_to], self.default_link)
+                self.set_initial_link_share(self.links[node_id][node_to])
+                self.tx_overheads[node_id][node_to] = 0
+                self.buffers[node_id][node_to] = deque()
+
+        if self.dyn_nodes_type != NodeConfig.TRANSMITTER:   # If node is not a transmitter, create links to node
+            for node_from in self.nodes:
+                self.links[node_from][node_id] = Link(self.nodes[node_from], node_config, self.default_link)
+                self.set_initial_link_share(self.links[node_from][node_id])
+                self.tx_overheads[node_from][node_id] = 0
+                self.buffers[node_from][node_id] = deque()
 
     def process_new_location(self, node_id: str, new_location: Tuple[float, ...]):
-        # Modify links from node
-        links = self.links.get(node_id, None)
-        if links is not None:
-            for link in links.values():
-                link.set_new_location(node_id, new_location)
-        # Modify links to node
-        for links in self.links.values():
-            link = links.get(node_id, None)
-            if link is not None:
-                link.set_new_location(node_id, new_location)
+        for node_from, links in self.links.items():
+            if node_id == node_from:
+                for link in links.values():
+                    link.set_new_location(node_id, new_location)
+            elif node_id in links:
+                links[node_id].set_new_location(node_id, new_location)
 
     def check_extra_ports(self):
         pass
@@ -124,6 +222,10 @@ class Network(Stateless):
             self.broadcast_message(node_from, msg)
         else:
             self.send_msg(node_from, node_to, msg)
+
+    @staticmethod
+    def set_initial_link_share(link: Link):  # This is only used in shared networks
+        pass
 
     def broadcast_message(self, node_from: str, msg: PhysicalPacket):
         for node_to in self.links[node_from]:
@@ -139,7 +241,6 @@ class Network(Stateless):
         link = self.links[node_from][node_to]
         new = not link.hit
 
-        msg.header = link.header
         msg.frequency = link.frequency
         msg.bandwidth = link.bandwidth
         msg.power = link.power
@@ -158,16 +259,6 @@ class Network(Stateless):
                                             link.power, link.noise, link.mcs)
             self.add_msg_to_queue(self.output_link_report, link_report)
 
-    def process_internal_messages(self):
-        clock = self._clock
-        # clock = self._clock + self.sigma  TODO cambiar esto
-        for buffers in self.buffers.values():
-            for node_to, buffer in buffers.items():
-                for time, msg in buffer:
-                    if time > clock:
-                        continue
-                    self.outputs_node_to[node_to].add(msg)  # Inject messages which sending time matches with the clock
-
     def get_next_timeout(self):
         if not self.msg_queue_empty():
             return 0
@@ -176,43 +267,48 @@ class Network(Stateless):
             ta = min(ta, min([buffer[0][0] - self._clock for buffer in buffers.values() if buffer], default=INFINITY))
         return ta
 
+    def initialize(self):
+        self.passivate()
 
-class SharedNetwork(Network):
-    def __init__(self, name: str, master_nodes: Dict[str, NodeConfiguration], slave_nodes: Dict[str, NodeConfiguration],
-                 default_link: LinkConfiguration, topology: Dict[str, Dict[str, Dict[str, None]]]):
+    def exit(self):
+        pass
 
-        super().__init__(name, {**master_nodes, **slave_nodes}, default_link, topology)
 
-        self.shares = dict()
-        for master_node in master_nodes:
-            self.shares[master_node] = dict()
-            for slave_node in slave_nodes:
-                if slave_node in self.links and master_node in self.links[slave_node]:
-                    self.links[slave_node][master_node].set_link_share(0)
+class SharedNetwork(Network, ABC):
+    def __init__(self, nodes: Dict[str, NodeConfig], default_link: LinkConfig, dyn_node_type: str, name: str = None):
+        """
+        Medium-shared network model. In this networks, each link only gets a portion of the total available resources.
+        Medium-shared networks are unidirectional: either from fixed to dynamic nodes or the other way around
+
+        :param nodes: Configuration of fixed nodes.
+        :param default_link: Default link configuration.
+        :param dyn_node_type: Dynamic node type (either transmitter or receiver).
+        :param name: xDEVS model name.
+        """
+        super().__init__(nodes, default_link, dyn_node_type=dyn_node_type, name=name)
+        self.shares = {node: set() for node in self.nodes}
+
+    @staticmethod
+    def set_initial_link_share(link: Link):  # In shared networks, the initial share is set to 0 (i.e., no resources)
+        link.set_link_share(0)
 
 
 class MasterNetwork(SharedNetwork):
+    def __init__(self, fixed_nodes: Dict[str, NodeConfig], default_link: LinkConfig, channel_div_name: str = 'equal',
+                 channel_div_config: Optional[Dict] = None, name: Optional[str] = None):
+        """
+        Master Medium-Shared Network model. This network is in charge of sharing link resources.
+        :param fixed_nodes: Configuration of fixed nodes.
+        :param default_link: Default link configuration.
+        :param channel_div_name: Channel division strategy name (by default, it is set to equal).
+        :param channel_div_config: Any additional parameter for configuring the channel division strategy.
+        :param name: xDEVS model name
+        """
+        super().__init__(fixed_nodes, default_link, NodeConfig.RECEIVER, name)  # Dynamic nodes are only receivers
 
-    channel_div_factory = ChannelDivisionFactory()
-
-    def __init__(self, name: str, master_nodes: Dict[str, NodeConfiguration], slave_nodes: Dict[str, NodeConfiguration],
-                 default_link: LinkConfiguration, topology: Dict[str, Dict[str, Dict[str, None]]],
-                 channel_div_name: str = None, channel_div_config: Dict = None):
-
-        for node_from, links in topology.items():
-            assert node_from in master_nodes
-            for node_to in links:
-                assert node_to in slave_nodes
-
-        super().__init__(name, master_nodes, slave_nodes, default_link, topology)
-
-        # the one in charge of divinding the spectrum (APs)
-        self.channel_div = None
-        if channel_div_name is None:
-            channel_div_name = 'equal'
         if channel_div_config is None:
             channel_div_config = dict()
-        self.channel_div = self.channel_div_factory.create_division(channel_div_name, **channel_div_config)
+        self.channel_div = AbstractFactory.create_network_channel_division(channel_div_name, **channel_div_config)
 
         self.input_enable_channels = Port(EnableChannels, 'input_enable_channels')
         self.output_channel_share = Port(ChannelShare, 'output_channel_share')
@@ -220,9 +316,10 @@ class MasterNetwork(SharedNetwork):
         self.add_out_port(self.output_channel_share)
 
     def check_extra_ports(self):
+        super().check_extra_ports()
         for msg in self.input_enable_channels.values:
-            node_from = msg.node_from
-            enabled_nodes_to = msg.nodes_to
+            node_from = msg.master_node
+            enabled_nodes_to = msg.slave_nodes
 
             mcs = {node_to: self.links[node_from][node_to].mcs for node_to in enabled_nodes_to}
             if self.channel_div is None:
@@ -235,7 +332,6 @@ class MasterNetwork(SharedNetwork):
             for node_to in disconnected:
                 link = self.links[node_from][node_to]
                 link.set_link_share(0)
-                # self.add_msg_to_queue(self.output_channel_share, ChannelShare(node_from, node_to, 0))
                 link_report = NetworkLinkReport(node_from, node_to, 0, 0, None, None, ("disconnected", 0))
                 self.add_msg_to_queue(self.output_link_report, link_report)
 
@@ -256,22 +352,21 @@ class MasterNetwork(SharedNetwork):
         if node_to not in self.links[node_from]:
             raise NotImplementedError("Network re-routing is not implemented yet")
         if node_to in self.shares[node_from]:
-        # if self.shares[node_from][node_to] > 0:
             self.send_message_through_link(node_from, node_to, msg)
         else:
-            raise ValueError  # TODO check this
+            raise ValueError
 
 
 class SlaveNetwork(SharedNetwork):
-    def __init__(self, name: str, master_nodes: Dict[str, NodeConfiguration], slave_nodes: Dict[str, NodeConfiguration],
-                 default_link: LinkConfiguration, topology: Dict[str, Dict[str, Dict[str, None]]]):
 
-        for node_from, links in topology.items():
-            assert node_from in slave_nodes
-            for node_to in links:
-                assert node_to in master_nodes
-
-        super().__init__(name, master_nodes, slave_nodes, default_link, topology)
+    def __init__(self, fixed_nodes: Dict[str, NodeConfig], default_link: LinkConfig, name: Optional[str] = None):
+        """
+        Slave Medium-Shared Network model. this network relies on a master network's channel division decision.
+        :param fixed_nodes: Configuration of fixed nodes.
+        :param default_link: Default link configuration.
+        :param name: xDEVS model name
+        """
+        super().__init__(fixed_nodes, default_link, NodeConfig.TRANSMITTER, name)
 
         self.input_channel_share = Port(ChannelShare, 'input_channel_share')
         self.add_in_port(self.input_channel_share)
@@ -284,7 +379,6 @@ class SlaveNetwork(SharedNetwork):
             disconnected = [node for node in self.shares[master_node] if node not in new_shares]
             for slave_node in disconnected:
                 self.links[slave_node][master_node].set_link_share(0)
-                # self.add_msg_to_queue(self.output_channel_share, ChannelShare(node_from, node_to, 0))
                 link_report = NetworkLinkReport(slave_node, master_node, 0, 0, None, None, ("disconnected", 0))
                 self.add_msg_to_queue(self.output_link_report, link_report)
 
@@ -293,8 +387,8 @@ class SlaveNetwork(SharedNetwork):
                 hit = slave_node in self.shares[master_node]
                 link.set_link_share(share)
                 if hit or not link.hit:
-                    link_report = NetworkLinkReport(slave_node, master_node, link.bandwidth, link.frequency, link.power,
-                                                    link.noise, link.mcs)
+                    link_report = NetworkLinkReport(slave_node, master_node, link.bandwidth,
+                                                    link.frequency, link.power, link.noise, link.mcs)
                     self.add_msg_to_queue(self.output_link_report, link_report)
 
             self.shares[master_node] = {slave: share for slave, share in new_shares.items()}
@@ -303,7 +397,6 @@ class SlaveNetwork(SharedNetwork):
         if node_to not in self.links[node_from]:
             raise NotImplementedError("Network re-routing is not implemented yet")
         if node_from in self.shares[node_to]:
-        # if self.shares[node_from][node_to] > 0:
             self.send_message_through_link(node_from, node_to, msg)
         else:
-            raise ValueError  # TODO check this
+            raise ValueError

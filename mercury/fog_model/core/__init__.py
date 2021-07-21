@@ -1,2 +1,1 @@
-from .core import Core, CoreLayerConfiguration
-from .sdnc import CoreLite
+from .core import Core

@@ -1,19 +1,18 @@
 from xdevs.models import Port
-from mercury.fog_model.common import Multiplexer
-from ...common.packet.apps.service import ServiceResponse
-from ...common.packet.packet import NetworkPacket
+from typing import Set
+from mercury.msg.network import NetworkPacket
+from ...common import Multiplexer
 
 
 class UEServiceMux(Multiplexer):
 
-    def __init__(self, name, service_ids):
-        self.service_ids = service_ids
+    def __init__(self, ue_id: str, services: Set[str]):
+        self.service_ids = services
 
-        self.input_network = Port(NetworkPacket, name + '_input_network')
-        self.outputs_network = {service: Port(NetworkPacket, name + '_output_network_' + service)
-                                for service in service_ids}
+        self.input_network = Port(NetworkPacket, 'input_network')
+        self.outputs_network = {service: Port(NetworkPacket, 'output_network_' + service) for service in services}
 
-        super().__init__(name, service_ids)
+        super().__init__('iot_devices_{}_srv_mux'.format(ue_id), services)
 
         self.add_in_port(self.input_network)
         [self.add_out_port(port) for port in self.outputs_network.values()]
@@ -24,11 +23,9 @@ class UEServiceMux(Multiplexer):
         for service_id in self.service_ids:
             self.routing_table[self.input_network][service_id] = self.outputs_network[service_id]
 
-    def get_node_to(self, msg):
+    def get_node_to(self, msg: NetworkPacket) -> str:
         """
         routes any service response message to the correspondent service
-        :param NetworkPacket msg: network packet
+        :param msg: network packet
         """
-        app_msg = msg.data
-        assert isinstance(app_msg, ServiceResponse)
-        return app_msg.service_id
+        return msg.data.service_id

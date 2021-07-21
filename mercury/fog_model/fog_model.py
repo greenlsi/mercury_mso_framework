@@ -1,43 +1,35 @@
 import datetime
-import logging
-from typing import List, Dict, Tuple
+from mercury.logger import logger as logging
+from typing import Any, Dict, Optional, Set, Tuple, Type
+from xdevs.sim import Coordinator, INFINITY
 
-from xdevs.models import Coupled
-from xdevs.sim import Coordinator
-from .common.packet.apps.service import ServiceConfiguration
-from .common.packet.apps.federation_management import FederationManagementConfiguration
-from .common.packet.apps.ran import RadioAccessNetworkConfiguration
-from .common.packet.packet import NetworkPacketConfiguration
-from .common.edge_fed.edge_fed import EdgeDataCenterConfiguration, ResourceManagerConfiguration
-from .common.edge_fed.pu import ProcessingUnitConfiguration
-from .common.edge_fed.rack import RackNodeConfiguration, RackConfiguration
+from .engines import MercuryFogModel, MercuryFogModelShortcut, MercuryLite
 
-from .shortcut import Shortcut, NetworkMultiplexer
+from mercury.config.edcs import ProcessingUnitConfig, CoolerConfig, ResourceManagerConfig, EdgeDataCenterConfig, \
+    EdgeFederationControllerConfig, EdgeFederationConfig
+from .edcs import EdgeDataCenters
 
-from .edge_fed import EdgeFederation
-from .edge_fed.edc.rack.pu import ProcessingUnit
-from .edge_fed.edc.rack.rack_node import RackNode
-from .edge_fed.edc.r_manager import ResourceManager
-from .core.sdnc import SoftwareDefinedNetworkController
-from .network.link import Link
-from .network.network import MasterNetwork
-from .network.node import NodeConfiguration, Nodes
+from mercury.config.smart_grid import SmartGridConfig, EnergyProviderConfig,\
+    ConsumerConfig, PowerSourceConfig, EnergyStorageConfig
+from .smart_grid import SmartGrid
 
-from .network import LinkConfiguration, TransceiverConfiguration
-from .core import CoreLayerConfiguration, Core, CoreLite
-from .crosshaul import Crosshaul, CrosshaulConfiguration
-from .access_points import AccessPointConfiguration, AccessPoints
-from .radio import RadioConfiguration, Radio, RadioShortcut
-from .iot_devices import UserEquipmentConfiguration, IoTDevicesLayerConfiguration, IoTDevices, IoTDevicesLite
+from mercury.config.iot_devices import UserEquipmentConfig, IoTDevicesConfig, ServiceConfig
+from .iot_devices import IoTDevices, IoTDevicesLite
+
+from mercury.config.core import CoreConfig
+from .core import Core
+
+from mercury.config.crosshaul import CrosshaulConfig
+from .crosshaul import Crosshaul
+from mercury.config.aps import AccessPointConfig
+from .aps import AccessPoints
+from mercury.config.radio import RadioConfig, RadioAccessNetworkConfig
+from .radio import Radio, RadioShortcut
+
 from ..visualization import *
-
-from .transducers.transducers import TransducerBuilderFactory
-
-AP_CONFIG = 'ap_config'
-AP_POWER = 'ap_power'
-AP_GAIN = 'ap_gain'
-AP_TEMPERATURE = 'ap_temperature'
-AP_SENSITIVITY = 'ap_sensitivity'
+from mercury.plugin import *
+from mercury.config.network import PacketConfig, NodeConfig, LinkConfig, TransceiverConfig
+from .network.network import DynamicNodesMobility
 
 
 class FogModel:
@@ -51,688 +43,733 @@ class FogModel:
         self.model = None
         self.coordinator = None
 
-        self.rac_config = None
-        self.fed_mgmt_config = None
-        self.network_config = None
-        self.edc_rack_types = dict()
-        self.p_units_config = dict()
-        self.services_config = dict()
+        self.cooler_configs: Dict[str, CoolerConfig] = dict()
+        self.pu_configs: Dict[str, ProcessingUnitConfig] = dict()
+        self.srv_configs: Dict[str, ServiceConfig] = dict()
 
-        self.edcs_config = dict()
-        self.aps_config = dict()
-        self.ues_config = dict()
-        self.fed_controller_config = None
+        self.edc_configs: Dict[str, EdgeDataCenterConfig] = dict()
+        self.ap_configs: Dict[str, AccessPointConfig] = dict()
+        self.ue_configs: Dict[str, UserEquipmentConfig] = dict()
 
-        self.core_config = None
-        self.crosshaul_config = None
+        self.edcs_congestion: float = 100
+        self.edcs_slicing: Optional[Dict[str, Dict[str, float]]] = None
+        self.edcs_controller_config = None
+        self.core_config: Optional[CoreConfig] = None
+        self.xh_config = None
         self.radio_config = None
         self.max_guard_time = 0
 
-        # Create all the factories
-        self.transducer_builder_factory = TransducerBuilderFactory()
+        self.energy_provider_configs: Dict[str, EnergyProviderConfig] = dict()
+        self.energy_consumer_configs: Dict[str, ConsumerConfig] = dict()
 
         # Transducers to be added
-        self.transducer_keys = dict()
-        self.edc_transducers = list()
-        self.radio_transducers = list()
-        self.ue_delay_transducers = list()
+        self.transducers_config: Dict[str, Tuple[str, Dict[str, Any]]] = dict()
 
-    def define_rac_config(self, header=0, pss_period=0, rrc_period=0, timeout=0.5, bypass_amf=False):
+    def define_rac_config(self, header: int = 0, pss_period: float = 0, rrc_period: float = 0,
+                          timeout: float = 0.5, bypass_amf: bool = False):
         """
         Define configuration for all the services related with radio access operations.
 
-        :param int header: size (in bits) of the header of radio access application messages
-        :param float pss_period: period (in seconds) of Primary Synchronization Signals
-        :param float rrc_period: period (in seconds) of Radio Resource Control Signals
-        :param float timeout: time (in seconds) to wait before an unacknowledged message is considered timed out
-        :param bypass_amf:
+        :param header: size (in bits) of the header of radio access application messages
+        :param pss_period: period (in seconds) of Primary Synchronization Signals
+        :param rrc_period: period (in seconds) of Radio Resource Control Signals
+        :param timeout: time (in seconds) to wait before an unacknowledged message is considered timed out
+        :param bypass_amf: if True, APs are in charge of access control decisions
         """
-        self.rac_config = RadioAccessNetworkConfiguration(header, pss_period, rrc_period, timeout, bypass_amf)
+        PacketConfig.RAN_MGMT_HEADER = header
+        RadioAccessNetworkConfig.pss_period = pss_period
+        RadioAccessNetworkConfig.rrc_period = rrc_period
+        RadioAccessNetworkConfig.timeout = timeout
+        RadioAccessNetworkConfig.bypass_amf = bypass_amf
 
-    def define_fed_mgmt_config(self, header=0, edc_report_data=0):
+    @staticmethod
+    def define_fed_mgmt_config(header: int = 0, content: int = 0):
         """
         Define configuration for all federation management-related messages.
 
-        :param int header: size (in bits) of the header of radio access application messages
-        :param int edc_report_data: size (in bits) of the body of EDC report messages
+        :param header: size (in bits) of the header of radio access application messages
+        :param content: size (in bits) of the body of EDC report messages
         """
-        self.fed_mgmt_config = FederationManagementConfiguration(header, edc_report_data)
+        PacketConfig.EDGE_FED_MGMT_HEADER = header
+        PacketConfig.EDGE_FED_MGMT_CONTENT = content
 
-    def define_network_config(self, header=0):
+    @staticmethod
+    def define_network_config(header: int = 0):
         """
         Define configuration for all the network packets.
 
-        :param int header: size (in bits) of the header of network packets.
+        :param header: size (in bits) of the header of network packets.
         """
-        self.network_config = NetworkPacketConfiguration(header)
+        PacketConfig.NET_HEADER = header
 
     @staticmethod
-    def add_custom_rack_node_temp_model(key, model):
-        RackNode.rack_temp_factory.register_model(key, model)
+    def add_custom_service_demand_estimator(key: str, model: Type[DemandEstimationGenerator]):
+        """
+        Adds a custom service demand estimator model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_demand_estimator(key, model)
 
     @staticmethod
-    def add_custom_rack_node_power_model(key, model):
-        RackNode.rack_power_factory.register_model(key, model)
-
-    def define_edc_rack_type(self, rack_id, temp_model_name=None, temp_model_config=None, pwr_model_name=None,
-                             pwr_model_config=None):
+    def add_custom_srv_session_profile(key: str, model: Type[ServiceSessionProfile]):
         """
-        :param str rack_id: ID for the rack type
-        :param str temp_model_name: Temperature model name for the rack type
-        :param dict temp_model_config: Temperature model configuration parameters
-        :param str pwr_model_name: Heat dissipation power model name for the rack type
-        :param dict pwr_model_config: Power model configuration parameters
+        Adds a custom service profile model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_srv_session_profile(key, model)
+
+    @staticmethod
+    def add_custom_srv_duration_profile(key: str, model: Type[ServiceSessionDuration]):
+        """
+        Adds a custom service profile model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_srv_session_duration(key, model)
+
+    @staticmethod
+    def add_custom_srv_request_profile(key: str, model: Type[ServiceRequestProfile]):
+        """
+        Adds a custom service profile model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_srv_request_profile(key, model)
+
+    # TODO improve service-related stuff
+    def define_srv_config(self, service_id: str, header: int, content: int,  req_profile_name: str,
+                          req_profile_config: Dict[str, Any], req_timeout: float, max_batches: int,
+                          session_profile_name: str, session_profile_config: Dict[str, Any], session_timeout: float,
+                          session_duration_name: str, session_duration_config: Dict[str, Any],
+                          demand_estimator_name: Optional[str] = None,
+                          demand_estimator_config: Optional[Dict[str, Any]] = None):
+        """
+        Define configuration  for services.
+        :param service_id: ID of the service.
+        :param header: size (in bits) of headers of a given service.
+        :param content: size (in bits) of content of data messages of a given service.
+        :param req_profile_name: name of the service request profile model.
+        :param req_profile_config: any additional configuration parameter for the service request profile model.
+        :param req_timeout: time (in seconds) to wait before considering a request without response timed out.
+        :param max_batches: maximum number of requests that can be sent simultaneously.
+        :param session_profile_name: name of the service session profile model.
+        :param session_profile_config: any additional configuration parameter for the service session profile model.
+        :param session_timeout: time (in seconds) to wait before considering an open session without response timed out.
+        :param session_duration_name: name of the service session duration model.
+        :param session_duration_config: any additional configuration parameter for the service session duration model.
+        :param demand_estimator_name: name of the service demand estimator model.
+        :param demand_estimator_config: any additional configuration parameter for the service demand estimator model.
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        if rack_id in self.edc_rack_types:
+        if service_id in self.srv_configs:
+            raise AssertionError("Service ID already defined")
+        self.srv_configs[service_id] = ServiceConfig(service_id, header, content,  req_profile_name, req_profile_config,
+                                                     req_timeout, max_batches, session_profile_name,
+                                                     session_profile_config, session_timeout, session_duration_name,
+                                                     session_duration_config, demand_estimator_name,
+                                                     demand_estimator_config)
+
+    @staticmethod
+    def add_custom_rack_cooler_power_model(key: str, model: Type[EdgeDataCenterCoolerPowerModel]):
+        """
+        Adds a custom rack cooler power model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_cooler_pwr(key, model)
+
+    @staticmethod
+    def add_custom_rack_cooler_temp_model(key: str, model: Type[EdgeDataCenterCoolerTemperatureModel]):
+        """
+        Adds a custom rack cooler temperature model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_cooler_temp(key, model)
+
+    def define_edc_rack_cooler_type(self, cooler_id: str, pwr_model_name: str = None,
+                                    pwr_model_config: Dict[str, Any] = None, temp_model_name: str = None,
+                                    temp_model_config: Dict[str, Any] = None):
+        """
+        Define a rack cooler type.
+        :param cooler_id: ID for the rack type
+        :param pwr_model_name: Heat dissipation power model name for the rack type
+        :param pwr_model_config: Power model configuration parameters
+        :param temp_model_name: Temperature model name for the rack type
+        :param temp_model_config: Temperature model configuration parameters
+        """
+        if self.model is not None:
+            raise AssertionError("Model already built. No changes are allowed after building the model")
+        if cooler_id in self.cooler_configs:
             raise AssertionError("EDC Rack ID matches with other already defined")
-        self.edc_rack_types[rack_id] = RackNodeConfiguration(rack_id, temp_model_name, temp_model_config,
-                                                             pwr_model_name, pwr_model_config)
+        self.cooler_configs[cooler_id] = CoolerConfig(cooler_id, pwr_model_name, pwr_model_config,
+                                                      temp_model_name, temp_model_config)
 
     @staticmethod
-    def add_custom_pu_power_model(key, model):
-        ProcessingUnit.pu_power_factory.register_model(key, model)
+    def add_custom_pu_power_model(key: str, model: Type[ProcessingUnitPowerModel]):
+        """
+        Adds a custom processing unit power model to the corresponding factory.
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_pu_pwr(key, model)
 
     @staticmethod
-    def add_custom_pu_temp_model(key, model):
-        ProcessingUnit.pu_temp_factory.register_model(key, model)
+    def add_custom_pu_temp_model(key: str, model: Type[ProcessingUnitTemperatureModel]):
+        """
+        Adds a custom processing unit temperature model to the corresponding factory.
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_pu_temp(key, model)
 
-    def define_p_unit_config(self, p_unit_id, dvfs_table=None, max_u=100, max_start_stop=0, t_on=0, t_off=0, t_start=0,
-                             t_stop=0, t_operation=0, pwr_model_name=None, pwr_model_config=None, temp_model_name=None,
-                             temp_model_config=None):
+    def define_pu_type_config(self, pu_type: str, services: Dict[str, Dict[str, float]],
+                              dvfs_table: Optional[Dict[float, Any]] = None, t_on: float = 0,
+                              t_off: float = 0, sched_name: str = 'fcfs', sched_config: Optional[Dict[str, Any]] = None,
+                              pwr_model_name: str = None, pwr_model_config: Optional[Dict[str, Any]] = None,
+                              temp_model_name: str = None, temp_model_config: Optional[Dict[str, Any]] = None):
         """
         Define a new Processing Unit type.
-        :param str p_unit_id: Processing Unit type ID. It must be unique.
-        :param dict dvfs_table: DVFS table. Keys are maximum specific std_u factor for using this DVFS
-                                configuration. Values are hardware configuration for the given DVFS configuration
-        :param float max_u: Processing Unit maximum utilization factor
-        :param int max_start_stop: Maximum number of services that can be simultaneously started and/or stopped
-        :param float t_on: time required for the processing unit to switch on [s]
-        :param float t_off: time required for the processing unit to switch off [s]
-        :param float t_start: time required for the processing unit to start a session [s]
-        :param float t_stop: time required for the processing unit to stop a session [s]
-        :param float t_operation: time required for the processing unit to perform an operation [s]
-        :param str pwr_model_name: Processing unit power model name
-        :param dict pwr_model_config: Processing unit power model configuration
-        :param str temp_model_name: Processing unit temperature model name
-        :param dict temp_model_config: Processing unit temperature model configuration
+
+        :param pu_type: Processing Unit type ID. It must be unique.
+        :param dvfs_table: DVFS table. Keys are maximum specific std_u factor for using this DVFS configuration.
+                           Values are hardware configuration for the given DVFS configuration
+        :param services: resource utilization depending on the service to host
+        :param t_on: time required for the processing unit to switch on [s]
+        :param t_off: time required for the processing unit to switch off [s]
+        :param sched_name: Processing scheduling model name
+        :param sched_config: Processing scheduling model configuration
+        :param pwr_model_name: Processing unit power model name
+        :param pwr_model_config: Processing unit power model configuration
+        :param temp_model_name: Processing unit temperature model name
+        :param temp_model_config: Processing unit temperature model configuration
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        if p_unit_id in self.p_units_config:
+        if pu_type in self.pu_configs:
             raise AssertionError("Processing Unit ID matches with other already defined")
-        p_unit_config = ProcessingUnitConfiguration(p_unit_id, dvfs_table, max_u, max_start_stop, t_on, t_off, t_start,
-                                                    t_stop, t_operation, pwr_model_name, pwr_model_config,
-                                                    temp_model_name, temp_model_config)
-        self.p_units_config[p_unit_id] = p_unit_config
-
-    def define_service_config(self, service_id, service_u, header, generation_rate, packaging_time, min_closed_t,
-                              min_open_t, service_timeout, window_size=1):
-        """
-        Define Service to be ran by UEs
-
-        :param str service_id: Service configuration ID. It must be unique among all the services defined in the model
-        :param float service_u: Standard EDC std_u factor required by the service
-        :param int header: size (in bits) of headers of a given service
-        :param float generation_rate: data stream generation rate (in bps)
-        :param float packaging_time: time (in seconds) encapsulated in each service session message
-        :param float min_closed_t: minimum time (in seconds) to wait before opening a service session
-        :param float min_open_t: minimum time (in seconds) to wait before closing a service session
-        :param float service_timeout: time (in seconds) to wait before considering a message without response timed out
-        :param int window_size: maximum number of session requests that can be sent simultaneously with no response
-        """
-        if self.model is not None:
-            raise AssertionError("Model already built. No changes are allowed after building the model")
-        if service_id in self.services_config:
-            raise AssertionError("Service ID already defined")
-
-        new_service = ServiceConfiguration(service_id, service_u, header, generation_rate, packaging_time, min_closed_t,
-                                           min_open_t, service_timeout, window_size)
-        self.services_config[service_id] = new_service
+        p_unit_config = ProcessingUnitConfig(pu_type, services, dvfs_table, t_on, t_off,
+                                             sched_name, sched_config, pwr_model_name,
+                                             pwr_model_config, temp_model_name, temp_model_config)
+        self.pu_configs[pu_type] = p_unit_config
 
     @staticmethod
-    def add_custom_dispatch_strategy(key, model):
-        ResourceManager.dispatching_factory.register_strategy(key, model)
-
-    def add_edc_config(self, edc_id: str, edc_location: Tuple[float, ...], crosshaul_trx: TransceiverConfiguration,
-                       r_manager_config: Dict, edc_racks_map: Dict[str, Tuple[str, List[ProcessingUnitConfiguration]]],
-                       env_temp: float = 298):
+    def add_custom_edc_mapping_strategy(key: str, model: Type[MappingStrategy]):
         """
-        :param edc_id:
-        :param edc_location:
-        :param crosshaul_trx:
-        :param r_manager_config:
-        :param edc_racks_map:
-        :param env_temp:
+        Adds a custom EDC dispatching strategy to the corresponding factory.
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_mapping(key, model)
+
+    @staticmethod
+    def add_custom_edc_hot_standby(key: str, model: Type[HotStandbyStrategy]):
+        """
+        Adds a custom EDC hot standby strategy to the corresponding factory.
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_edc_hot_standby(key, model)
+
+    def add_edc_config(self, edc_id: str, edc_location: Tuple[float, ...], r_manager_config: ResourceManagerConfig,
+                       edc_pus: Dict[str, str], cooler_id: Optional[str] = None,
+                       edc_trx: Optional[TransceiverConfig] = None, env_temp: float = 298):
+        """
+        Adds an EDC to the scenario.
+        :param edc_id: ID of the EDC
+        :param edc_location: Location of the EDC
+        :param edc_trx: Crosshaul transceiver used by the EDC to communicate with the rest of the scenario
+        :param r_manager_config: EDC's Resource Manager configuration
+        :param env_temp: Base temperature of the EDC
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        if edc_id in self.edcs_config:
+        if self.edcs_slicing is not None:
+            raise AssertionError('Model has already defined an EDC slicing strategy. No new EDCs are allowed after.')
+        if edc_id in self.edc_configs:
             raise AssertionError("Edge Data Center already defined")
-        rack_configs = dict()
 
-        hw_dvfs_mode = r_manager_config.get('hw_dvfs_mode', False)
-        hw_power_off = r_manager_config.get('hw_power_off', False)
-        n_hot_standby = r_manager_config.get('n_hot_standby', 0)
+        pus_config = {pu_id: self.pu_configs[pu_config] for pu_id, pu_config in edc_pus.items()}
+        cooler: Optional[CoolerConfig] = self.cooler_configs[cooler_id] if cooler_id is not None else None
+        new_edc = EdgeDataCenterConfig(edc_id, edc_location, r_manager_config, pus_config, cooler, edc_trx, env_temp)
+        self.edc_configs[edc_id] = new_edc
 
-        disp_strategy_name = r_manager_config.get('disp_strategy_name', 'emptiest_rack_emptiest_pu')
-        disp_strategy_config = r_manager_config.get('disp_strategy_config', None)
-
-        r_manager_conf = ResourceManagerConfiguration(hw_dvfs_mode, hw_power_off, n_hot_standby, disp_strategy_name,
-                                                      disp_strategy_config)
-
-        for rack_id, rack_conf in edc_racks_map.items():
-            rack_type = rack_conf[0]
-            p_units_list = rack_conf[1]
-            if rack_type not in self.edc_rack_types:
-                raise AssertionError("Rack type for rack {} is not defined".format(rack_id))
-            for p_unit in p_units_list:
-                if p_unit not in self.p_units_config:
-                    raise AssertionError("Processing Unit that conforms the EDC is not defined")
-            p_units_config_list = [self.p_units_config[p_unit_id] for p_unit_id in p_units_list]
-            rack_node_config = self.edc_rack_types[rack_type]
-            rack_configs[rack_id] = RackConfiguration(rack_id, p_units_config_list, rack_node_config)
-
-        new_edc = EdgeDataCenterConfiguration(edc_id, edc_location, crosshaul_trx,
-                                              r_manager_conf, rack_configs, env_temp)
-        self.edcs_config[edc_id] = new_edc
+    def add_edge_fed_config(self, congestion: float = 100, slicing: Optional[Dict[str, Dict[str, float]]] = None):
+        self.edcs_congestion = congestion
+        self.edcs_slicing = dict() if slicing is None else slicing  # TODO check that this is well-defined
 
     @staticmethod
-    def add_custom_sdn_strategy(key, model):
-        SoftwareDefinedNetworkController.sdn_strategy_factory.register_strategy(key, model)
-
-    def add_core_config(self, amf_id, sdn_controller_id, core_location, crosshaul_transceiver_config=None,
-                        sdn_strategy_name='closest', sdn_strategy_config=None):
+    def add_custom_edc_demand_share(key: str, model: Type[DemandShare]):
         """
-        Add core_config layer to Mercury model
+        Adds a custom Edge Data Center demand share model to the corresponding factory.
+        :param key: ID of the custom model.
+        :param model: Pointer to the custom model class.
+        """
+        AbstractFactory.register_edc_demand_share(key, model)
 
-        :param str amf_id: Access and Mobility Management Function ID
-        :param str sdn_controller_id: Software-Defined Network Function ID
-        :param tuple core_location: Core network elements (SDN controller, AMF) ue_location (x, y) [m]
-        :param CrosshaulTransceiverConfiguration crosshaul_transceiver_config: Crosshaul transceiver configuration
-        :param str sdn_strategy_name: SDN Controller name
-        :param dict sdn_strategy_config: SDN Controller configuration
+    @staticmethod
+    def add_custom_edc_dyn_dispatching(key: str, model: Type[DynamicMapping]):
+        """
+        Adds a custom Edge Data Center dynamic dispatching function model to the corresponding factory.
+        :param key: ID of the custom model.
+        :param model: Pointer to the custom model class.
+        """
+        AbstractFactory.register_edc_dyn_dispatching(key, model)
+
+    @staticmethod
+    def add_custom_edc_dyn_hot_standby(key: str, model: Type[DynamicHotStandby]):
+        """
+        Adds a custom Edge Data Center dynamic hot standby function model to the corresponding factory.
+        :param key: ID of the custom model.
+        :param model: Pointer to the custom model class.
+        """
+        AbstractFactory.register_edc_dyn_hot_standby(key, model)
+
+    @staticmethod
+    def add_custom_edc_dyn_slicing(key: str, model: Type[DynamicSlicing]):
+        """
+        Adds a custom Edge Data Center dynamic EDC slicing policy model to the corresponding factory.
+        :param key: ID of the custom model.
+        :param model: Pointer to the custom model class.
+        """
+        AbstractFactory.register_edc_dyn_slicing(key, model)
+
+    def add_efc_config(self, demand_share_name: str = 'equal',
+                       demand_share_config: Optional[Dict[str, Any]] = None,
+                       dyn_dispatching_name: Optional[str] = None,
+                       dyn_dispatching_config: Optional[Dict[str, Any]] = None,
+                       dyn_hot_standby_name: Optional[str] = None,
+                       dyn_hot_standby_config: Optional[Dict[str, Any]] = None,
+                       dyn_slicing_name: Optional[str] = None,
+                       dyn_slicing_config: Optional[Dict[str, Any]] = None, cool_down: float = 0):
+        if self.model is not None:
+            raise AssertionError("Model already built. No changes are allowed after building the model")
+        if self.edcs_controller_config is not None:
+            raise AssertionError("EDCs controller already defined")
+        self.edcs_controller_config = EdgeFederationControllerConfig(demand_share_name, demand_share_config,
+                                                                     dyn_dispatching_name, dyn_dispatching_config,
+                                                                     dyn_hot_standby_name, dyn_hot_standby_config,
+                                                                     dyn_slicing_name, dyn_slicing_config, cool_down)
+
+    @staticmethod
+    def add_custom_smart_grid_power_source(key: str, model: Type[PowerSource]):
+        """
+        Adds a custom Smart Grid power source model to the corresponding factory.
+        :param key: ID of the custom model.
+        :param model: Pointer to the custom model class.
+        """
+        AbstractFactory.register_smart_grid_source(key, model)
+
+    @staticmethod
+    def add_custom_smart_grid_provider(key: str, model: Type[EnergyProvider]):
+        """
+        Adds a custom Smart Grid energy provider model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_smart_grid_provider(key, model)
+
+    @staticmethod
+    def add_custom_smart_grid_consumption_manager(key: str, model: Type[ConsumptionManager]):
+        """
+        Adds a custom Smart Grid consumption manager model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_smart_grid_consumption_manager(key, model)
+
+    def add_smart_grid_energy_provider(self, provider_id: str, provider_type: str,
+                                       provider_config: Optional[Dict[str, Any]] = None):
+        """
+        Adds a smart grid energy provider
+        :param provider_id: ID of the energy provider
+        :param provider_type: Type of energy provider
+        :param provider_config: Any additional configuration parameter for the energy provider model
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
+        if provider_id in self.energy_provider_configs:
+            raise AssertionError("Smart Grid energy provider already defined")
+        self.energy_provider_configs[provider_id] = EnergyProviderConfig(provider_id, provider_type, provider_config)
 
-        self.core_config = CoreLayerConfiguration(amf_id, sdn_controller_id, core_location,
-                                                  crosshaul_transceiver_config, sdn_strategy_name, sdn_strategy_config)
+    def add_smart_grid_consumer(self, consumer_id: str, provider_id: str,
+                                storage_config: Optional[EnergyStorageConfig] = None,
+                                consumption_manager_name: str = 'static',
+                                consumption_manager_config: Optional[Dict[str, Any]] = None,
+                                sources_config: Optional[Dict[str, PowerSourceConfig]] = None):
+        if self.model is not None:
+            raise AssertionError("Model already built. No changes are allowed after building the model")
+        if consumer_id in self.energy_consumer_configs:
+            raise AssertionError("Smart Grid consumer already defined")
+        if consumer_id not in self.edc_configs:
+            raise AssertionError("Smart Grid consumer does not coincide with any EDC defined so far")
+        self.energy_consumer_configs[consumer_id] = ConsumerConfig(consumer_id, provider_id, storage_config,
+                                                                   consumption_manager_name,
+                                                                   consumption_manager_config, sources_config)
 
     @staticmethod
-    def add_custom_link_attenuation(key, model):
-        Link.attenuation_factory.register_attenuation(key, model)
-
-    @staticmethod
-    def add_custom_link_noise(key, model):
-        Link.noise_factory.register_noise(key, model)
-
-    def add_crosshaul_config(self, base_link_config: LinkConfiguration = None,
-                             base_trx_config: TransceiverConfiguration = None):
+    def add_custom_sdn_strategy(key: str, model: Type[SDNStrategy]):
         """
+        Adds a custom SDN strategy model to the corresponding factory
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_sdn_strategy(key, model)
 
-        :param base_link_config:
-        :param base_trx_config:
-        :return:
+    def add_core_config(self, core_location: Tuple[float, ...], core_trx: Optional[TransceiverConfig] = None,
+                        sdn_strategy_name: str = 'closest', sdn_strategy_config: Optional[Dict[str, Any]] = None):
+        """
+        Add core_config layer to Mercury model.
+        :param core_location: Core network elements (SDN controller, AMF) ue_location (x, y) [m].
+        :param core_trx: Crosshaul transceiver configuration.
+        :param sdn_strategy_name: SDN Controller name.
+        :param sdn_strategy_config: Any additional SDN Controller configuration parameter.
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        self.crosshaul_config = CrosshaulConfiguration(base_link_config, base_trx_config)
+        self.core_config = CoreConfig(core_location, core_trx, sdn_strategy_name, sdn_strategy_config)
+
+    @staticmethod
+    def add_custom_link_attenuation(key: str, model: Type[Attenuation]):
+        """
+        Adds a custom link attenuation model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_network_attenuation(key, model)
+
+    @staticmethod
+    def add_custom_link_noise(key: str, model: Type[Noise]):
+        """
+        Adds a custom link noise model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_network_noise(key, model)
+
+    def add_xh_config(self, base_link_config: Optional[LinkConfig] = None,
+                      base_trx_config: Optional[TransceiverConfig] = None, header: int = 0):
+        """
+        Adds configuration for Crosshaul communications
+
+        :param base_link_config: Base configuration for crosshaul links
+        :param base_trx_config: Base configuration for crosshaul transceivers
+        :param header: size (in bits) of message headers
+        """
+        if self.model is not None:
+            raise AssertionError("Model already built. No changes are allowed after building the model")
+        self.xh_config = CrosshaulConfig(base_link_config, base_trx_config, header)
 
     def add_ap_config(self, ap_id: str, ap_location: Tuple[float, ...],
-                      crosshaul_trx_config: TransceiverConfiguration = None,
-                      radio_antenna_config: TransceiverConfiguration = None):
+                      xh_trx: Optional[TransceiverConfig] = None, rad_antenna: Optional[TransceiverConfig] = None):
         """
-        Access Point Configuration
+        Adds Access Point Configuration
+
         :param ap_id: ID of the Access Point (it must be unique)
         :param ap_location: location of the AP expressed as a tuple (in meters)
-        :param crosshaul_trx_config:  AP's crosshaul transceiver configuration
-        :param radio_antenna_config: AP's radio antenna configuration
+        :param xh_trx:  AP's crosshaul transceiver configuration
+        :param rad_antenna: AP's radio antenna configuration
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        if ap_id in self.aps_config:
+        if ap_id in self.ap_configs:
             raise AssertionError("Access Point already defined")
-        new_ap = AccessPointConfiguration(ap_id, ap_location, crosshaul_trx_config, radio_antenna_config)
-        self.aps_config[ap_id] = new_ap
+        new_ap = AccessPointConfig(ap_id, ap_location, xh_trx, rad_antenna)
+        self.ap_configs[ap_id] = new_ap
 
     @staticmethod
-    def add_custom_channel_division_strategy(key, model):
-        MasterNetwork.channel_div_factory.register_division(key, model)
-
-    @staticmethod
-    def add_custom_node_mobility(key, model):
-        NodeConfiguration.mobility_factory.register_mobility(key, model)
-
-    def add_radio_config(self, base_dl_config: LinkConfiguration = None, base_ul_config: LinkConfiguration = None,
-                         base_ap_antenna: TransceiverConfiguration = None,
-                         base_ue_antenna: TransceiverConfiguration = None, channel_div_name: str = None,
-                         channel_div_config: Dict = None):
+    def add_custom_channel_division_strategy(key: str, model: Type[ChannelDivision]):
         """
+        Adds a custom channel frequency division model to the corresponding factory
 
-        :param base_dl_config:
-        :param base_ul_config:
-        :param base_ap_antenna:
-        :param base_ue_antenna:
-        :param channel_div_name:
-        :param channel_div_config:
-        :return:
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_network_channel_division(key, model)
+
+    @staticmethod
+    def add_custom_node_mobility(key: str, model: Type[NodeMobility]):
+        """
+        Adds a custom node mobility model to the corresponding factory
+
+        :param key: ID of the custom model
+        :param model: Pointer to the custom model class
+        """
+        AbstractFactory.register_mobility(key, model)
+
+    def add_radio_config(self, base_dl_config: Optional[LinkConfig] = None, base_ul_config: Optional[LinkConfig] = None,
+                         base_ap_antenna: Optional[TransceiverConfig] = None,
+                         base_ue_antenna: Optional[TransceiverConfig] = None, channel_div_name: str = 'equal',
+                         channel_div_config: Optional[Dict[str, Any]] = None, header: int = 0):
+        """
+        Adds configuration for Radio communications.
+
+        :param base_dl_config: Base configuration for downlink radio links
+        :param base_ul_config: Base configuration for uplink radio links
+        :param base_ap_antenna: Base configuration for APs' radio antennas
+        :param base_ue_antenna: Base configuration for UEs' radio antennas
+        :param channel_div_name: ID of the channel frequency division algorithm
+        :param channel_div_config: Any additional configuration parameter of the channel frequency division algorithm
+        :param header: size (in bits) of radio message headers
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        self.radio_config = RadioConfiguration(base_dl_config, base_ul_config, base_ap_antenna, base_ue_antenna,
-                                               channel_div_name, channel_div_config)
+        self.radio_config = RadioConfig(base_dl_config, base_ul_config, base_ap_antenna, base_ue_antenna,
+                                        channel_div_name, channel_div_config, header)
 
-    def add_ue_config(self, ue_id: str, services_id: List[str], radio_antenna: TransceiverConfiguration = None,
-                      mobility_name: str = None, **kwargs):
+    def add_ue_config(self, ue_id: str, services_id: Set[str], radio_antenna: TransceiverConfig = None,
+                      t_start: float = 0, t_end: float = INFINITY, mobility_name: str = None,
+                      mobility_config: Optional[dict] = None):
         """
+        Adds User Equipment Configuration
 
-        :param ue_id:
-        :param services_id:
-        :param radio_antenna:
-        :param mobility_name:
-        :param kwargs:
+        :param ue_id: ID of the User Equipment (it must be unique)
+        :param services_id: Set of the IDs of all the services on board of the UE
+        :param radio_antenna: Configuration for UE's radio antenna
+        :param t_start:
+        :param t_end:
+        :param mobility_name: Name of the mobility module implemented by the UE
+        :param mobility_config: Any additional parameter regarding node mobility
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
-        if ue_id in self.ues_config:
+        if ue_id in self.ue_configs:
             raise AssertionError('User Equipment ID already defined')
         for service_id in services_id:
-            if service_id not in self.services_config:
+            if service_id not in self.srv_configs:
                 raise AssertionError("Service that conforms the UE is not defined")
-        service_config_list = [self.services_config[service_id] for service_id in services_id]
+        services_config = {service_id: self.srv_configs[service_id] for service_id in services_id}
 
-        new_ue = UserEquipmentConfiguration(ue_id, service_config_list, radio_antenna, mobility_name, **kwargs)
-        self.ues_config[ue_id] = new_ue
+        self.ue_configs[ue_id] = UserEquipmentConfig(ue_id, services_config, radio_antenna, t_start,
+                                                     t_end, mobility_name, mobility_config)
 
-    def set_max_guard_time(self, max_guard_time):
+    def set_max_guard_time(self, max_guard_time: float):
         """
         Add a guard time generator in order to prevent from similar, simultaneous UE behaviour
 
-        :param float max_guard_time: upper limit of the uniform distribution
+        :param max_guard_time: upper limit of the uniform distribution
         """
         if self.model is not None:
             raise AssertionError("Model already built. No changes are allowed after building the model")
         self.max_guard_time = max_guard_time
 
-    def add_transducers(self, key, **kwargs):
-        if not self.transducer_builder_factory.is_builder_defined(key):
-            raise ValueError("Transducer builder is not defined.")
-        if key in self.transducer_keys:
+    def add_transducers(self, transducer_id, transducer_type: str, **kwargs):  # TODO check that transducer exists
+        if transducer_id in self.transducers_config:
             raise ValueError("Transducer already defined")
-        self.transducer_keys[key] = kwargs
+        self.transducers_config[transducer_id] = (transducer_type, kwargs)
 
     def build(self, lite=False, shortcut=False):
         """ Build Mercury model """
-        if self.network_config is None:
-            raise Exception
-        if self.fed_mgmt_config is None:
-            raise Exception
+        logging.debug("Mercury: Building Layers...")
 
-        logging.info("Mercury: Building Layers...")
+        services_id = {service_id for service_id in self.srv_configs}
 
-        logging.info("    Building Edge Federation Layer...")
-        federation = EdgeFederation(self.name + '_edge_fed', self.edcs_config,
-                                    self.services_config, self.fed_mgmt_config, self.network_config,
-                                    self.core_config.sdnc_id, lite=lite)
-        logging.info("    Edge Federation Layer built")
+        logging.debug("    Building Edge Federation Layer...")
+        smart_grid_active = {edc_id: edc_id in self.energy_consumer_configs for edc_id in self.edc_configs}
+        edge_fed_config = EdgeFederationConfig(self.edc_configs, self.edcs_congestion,
+                                               self.edcs_slicing, self.edcs_controller_config)
+        federation = EdgeDataCenters(self.edc_configs, services_id, smart_grid_active, lite=lite)
+        logging.debug("    Edge Federation Layer Built")
 
-        logging.info("    Building Core Layer...")
-        aps_location = {ap_id: ap_config.ap_location for ap_id, ap_config in self.aps_config.items()}
-        edcs_location = {edc_id: edc_config.edc_location for edc_id, edc_config in self.edcs_config.items()}
-        ues_location = {ue_id: ue_config.ue_location for ue_id, ue_config in self.ues_config.items()}
-        services_id = [service_id for service_id in self.services_config]
-        if lite:
-            core = CoreLite(self.name + '_core', self.core_config, self.fed_mgmt_config, self.network_config,
-                            ues_location, aps_location, edcs_location, services_id)
-        else:
-            if self.rac_config is None:
-                raise Exception
-            core = Core(self.name + '_core', self.core_config, self.rac_config, self.fed_mgmt_config,
-                        self.network_config,
-                        aps_location, edcs_location, services_id)
-        logging.info("    Core Layer built")
+        logging.debug("    Building Core Layer...")
+        aps_location = {ap_id: ap_config.ap_location for ap_id, ap_config in self.ap_configs.items()}
+        core = Core(self.core_config, edge_fed_config, aps_location,
+                    self.srv_configs, self.energy_consumer_configs, lite)
+        logging.debug("    Core Layer Built")
+
+        edc_nodes = dict()
+        for edc_id, edc_config in self.edc_configs.items():
+            assert isinstance(edc_config.crosshaul_node, NodeConfig)
+            if edc_config.crosshaul_node.node_trx is None:
+                assert isinstance(self.xh_config, CrosshaulConfig)
+                edc_config.crosshaul_node.node_trx = self.xh_config.base_trx_config
+            edc_nodes[edc_id] = edc_config.crosshaul_node
+
+        ap_crosshaul_nodes = {ap_id: ap_config.xh_node for ap_id, ap_config in self.ap_configs.items()}
+        edc_nodes = {edc_id: edc_config.crosshaul_node for edc_id, edc_config in self.edc_configs.items()}
+        for node_group in [ap_crosshaul_nodes, edc_nodes]:
+            for node_config in node_group.values():
+                if node_config.node_trx is None:
+                    node_config.node_trx = self.xh_config.base_trx_config
+
+        ap_radio_nodes = {ap_id: ap_config.radio_node for ap_id, ap_config in self.ap_configs.items()}
+        for node_config in ap_radio_nodes.values():
+            if node_config.node_trx is None:
+                node_config.node_trx = self.radio_config.base_ap_antenna_config
 
         crosshaul = None
         access = None
         radio = None
+
         if not lite:
             if not shortcut:
-                logging.info("    Building Crosshaul Layer...")
-                ap_nodes = {ap_id: ap_config.crosshaul_node for ap_id, ap_config in self.aps_config.items()}
-                edc_nodes = {edc_id: edc_config.crosshaul_node for edc_id, edc_config in self.edcs_config.items()}
-                core_functions = self.core_config.core_nodes
-                crosshaul = Crosshaul(self.name + '_crosshaul', self.crosshaul_config, ap_nodes, edc_nodes,
-                                      core_functions)
-                logging.info("    Crosshaul Layer built")
+                logging.debug("    Building Crosshaul Layer...")
+                crosshaul = Crosshaul(self.xh_config, ap_crosshaul_nodes, edc_nodes, self.core_config)
+                logging.debug("    Crosshaul Layer built")
 
-            logging.info("    Building Access Points Layer...")
-            access = AccessPoints(self.name + '_access', self.aps_config, self.core_config.amf_id, self.rac_config,
-                                  self.network_config)
-            logging.info("    Access Points Layer built")
+            logging.debug("    Building Access Points Layer...")
+            access = AccessPoints(self.ap_configs)
+            logging.debug("    Access Points Layer built")
 
-            logging.info("    Building Radio Layer...")
-            ap_nodes = {ap_id: ap_config.radio_node for ap_id, ap_config in self.aps_config.items()}
-            ue_nodes = {ue_id: ue_config.radio_node for ue_id, ue_config in self.ues_config.items()}
+            logging.debug("    Building Radio Layer...")
             if shortcut:
-                radio = RadioShortcut(self.name + '_radio', self.radio_config, ue_nodes, ap_nodes)
+                radio = RadioShortcut(self.radio_config, ap_radio_nodes)
             else:
-                radio = Radio(self.name + '_radio', self.radio_config, ue_nodes, ap_nodes)
-            logging.info("    Radio Layer built")
+                radio = Radio(self.radio_config, ap_radio_nodes)
+            logging.debug("    Radio Layer built")
 
-        logging.info("    Building IoT Devices Layer...")
-        iot_config = IoTDevicesLayerConfiguration(self.ues_config, self.max_guard_time)
-        if lite:
-            iot_devices = IoTDevicesLite(self.name + '_iot_devices', iot_config, self.network_config,
-                                         self.core_config.sdnc_id)
-        else:
-            iot_devices = IoTDevices(self.name + '_iot_devices', iot_config, self.rac_config, self.network_config)
-        logging.info("    IoT Devices Layer built")
+        logging.debug("    Building IoT Devices Layer...")
+        for ue_config in self.ue_configs.values():
+            if ue_config.radio_node.node_trx is None:
+                ue_config.radio_node.node_trx = self.radio_config.base_ue_antenna_config
+        iot_config = IoTDevicesConfig(self.ue_configs, self.max_guard_time)
+        iot_devices = IoTDevicesLite(iot_config) if lite else IoTDevices(iot_config)
+        logging.debug("    IoT Devices Layer built")
 
-        logging.info("    Building Transducers...")
+        logging.debug("    Building Nodes Mobility...")
+        mobility = DynamicNodesMobility()
+        logging.debug("    Nodes Mobility Built")
+
+        logging.debug("    Building Smart Grid Layer...")
+        smart_grid = SmartGrid(SmartGridConfig(self.energy_provider_configs, self.energy_consumer_configs))
+        logging.debug("    Smart Grid Layer Built")
+
+        """
+        logging.debug("    Building Transducers...")
         scenario_config = dict()
-        scenario_config['edcs'] = list(self.edcs_config.values())
-        scenario_config['aps'] = list(self.aps_config.values())
-        scenario_config['services'] = list(self.services_config.values())
-        scenario_config['ues'] = list(self.ues_config.values())
+        scenario_config['edcs'] = list(self.edc_configs.values())
+        scenario_config['aps'] = list(self.ap_configs.values())
+        scenario_config['services'] = list(self.srv_configs.values())
+        scenario_config['ues'] = list(self.ue_configs.values())
+        scenario_config['smart_grid_consumers'] = list(self.energy_consumer_configs.values())
+        scenario_config['smart_grid_providers'] = list(self.energy_provider_configs.values())
 
         for key, config in self.transducer_keys.items():
-            builder = self.transducer_builder_factory.create_transducer_builder(scenario_config, key, **config)
+            builder = AbstractFactory.create_transducer_builder(key, scenario_config=scenario_config, **config)
             self.edc_transducers.append(builder.create_edc_transducer())
             self.radio_transducers.append(builder.create_radio_transducer())
             self.ue_delay_transducers.append(builder.create_ue_delay_transducer())
-        logging.info("    Transducers built")
+            if smart_grid is not None:
+                self.smart_grid_transducers.append(builder.create_smart_grid_transducer())
+        logging.debug("    Transducers built")
+        """
 
-        logging.info("Mercury: Layers built successfully")
+        logging.debug("Mercury: Layers built successfully")
 
-        logging.info("Mercury: Building model...")
+        logging.debug("Mercury: Building model...")
         if lite:
-            ue_nodes = {ue_id: ue_config.radio_node for ue_id, ue_config in self.ues_config.items()}
-            mobility = Nodes('ue_mobility', ue_nodes)
-            self.model = MercuryLite(self.name, federation, core, iot_devices, mobility, self.ue_delay_transducers,
-                                     self.edc_transducers)
+            self.model = MercuryLite(self.name, services_id, federation, core, iot_devices,
+                                     smart_grid, mobility, self.transducers_config)
         elif shortcut:
-            self.model = MercuryFogModelShortcut(self.name, federation, core, access, radio, iot_devices,
-                                                 self.ue_delay_transducers, self.edc_transducers)
+            self.model = MercuryFogModelShortcut(self.name, services_id, federation, core, access, radio,
+                                                 iot_devices, smart_grid, mobility, self.transducers_config)
         else:
-            self.model = MercuryFogModel(self.name, federation, core, crosshaul, access, radio, iot_devices,
-                                         self.ue_delay_transducers, self.edc_transducers, self.radio_transducers)
-        logging.info("Mercury: model built successfully")
+            self.model = MercuryFogModel(self.name, services_id, federation, core, crosshaul, access, radio,
+                                         iot_devices, smart_grid, mobility, self.transducers_config)
+        logging.debug("Mercury: model built successfully")
 
-    def initialize_coordinator(self):
+    def start_simulation(self, time_interv: float = 10000, log_time: bool = False):
         """ Initialize Mercury xDEVS coordinator """
+        start_date = datetime.datetime.now()
         if self.model is None:
             raise AssertionError('Mercury model has not been built yet.')
-        logging.info("Mercury: Starting Coordinator initialization...")
+        logging.debug("Mercury: Starting Coordinator initialization...")
         self.coordinator = Coordinator(self.model)
+        for transducer in self.model.transducers:
+            self.coordinator.add_transducer(transducer)
         self.coordinator.initialize()
-        logging.info("Mercury: Coordinator initialization finished successfully")
+        logging.debug("Mercury: Coordinator initialization finished successfully")
+        finish_date = datetime.datetime.now()
+        engine_time = finish_date - start_date
+        if log_time:
+            print("*********************")
+            print('It took {} seconds to create the engine'.format(engine_time))
+            print("*********************")
 
-    def start_simulation(self, time_interv=10000):
-        """ Start Mercury model simulation """
         start_date = datetime.datetime.now()
-        if self.coordinator is None:
-            raise AssertionError("Mercury Coordinator has not been initialized yet")
         self.coordinator.simulate_time(time_interv=time_interv)
         finish_date = datetime.datetime.now()
         sim_time = finish_date - start_date
-        print("*********************")
-        print('It took {} seconds to simulate'.format(sim_time))
-        print("*********************")
-        return sim_time
+        if log_time:
+            print("*********************")
+            print('It took {} seconds to simulate'.format(sim_time))
+            print("*********************")
+        for transducer in self.model.transducers:
+            transducer.exit()
+        return engine_time, sim_time
 
-    def plot_delay(self, alpha=1):
-        if not self.ue_delay_transducers:
-            raise ValueError("There is not any defined delay transducer")
-        delay_transducer = self.ue_delay_transducers[0]
-        t, ue_id, delay = delay_transducer.get_delay_data()
-        plot_ue_service_delay(t, ue_id, delay, alpha)
+    @staticmethod
+    def plot_delay(path: str, sep: str = ',', ue_id: Optional[str] = None,
+                   service_id: Optional[str] = None, action: Optional[str] = None, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        if ue_id is not None:
+            df = df[df['ue_id'] == ue_id]
+        if service_id is not None:
+            df = df[df['service_id'] == service_id]
+        if action is not None:
+            df = df[df['action'] == action]
+        plot_ue_service_delay(df['time'], df['delay'], ue_id, service_id, action, alpha)
 
-    def plot_edc_utilization(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, utilization = edc_transducer.get_edc_utilization_data()
-        plot_edc_utilization(t, edc_id, utilization, stacked=stacked, alpha=alpha)
+    @staticmethod
+    def plot_edc_utilization(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_utilization(df['time'], df['edc_id'], df['utilization'], stacked=stacked, alpha=alpha)
 
-    def plot_edc_power_demand(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_power_demand_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha)
+    @staticmethod
+    def plot_edc_power_demand(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['power_demand'], stacked=stacked, alpha=alpha)
 
-    def plot_edc_it_power(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_it_power_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha, nature='Demand (only IT)')
+    @staticmethod
+    def plot_edc_it_power(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['it_power'],
+                       stacked=stacked, alpha=alpha, nature='Demand (only IT)')
 
-    def plot_edc_cooling_power(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_cooling_power_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha, nature='Demand (only Cooling)')
+    @staticmethod
+    def plot_edc_cooling_power(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['cooling_power'],
+                       stacked=stacked, alpha=alpha, nature='Demand (only Cooling)')
 
-    def plot_edc_power_consumption(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_power_consumption_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha, nature='Consumption')
+    @staticmethod
+    def plot_edc_power_consumption(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_consumption'],
+                       stacked=stacked, alpha=alpha, nature='Consumption')
 
-    def plot_edc_charging_power(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_charging_power_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha, nature='Storage')
+    @staticmethod
+    def plot_edc_power_storage(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_storage'],
+                       stacked=stacked, alpha=alpha, nature='Storage')
 
-    def plot_edc_power_generation(self, stacked=False, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, power = edc_transducer.get_edc_power_generation_data()
-        plot_edc_power(t, edc_id, power, stacked=stacked, alpha=alpha, nature='Generation')
+    @staticmethod
+    def plot_edc_power_generation(path: str, sep: str = ',', stacked=False, alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_generation'],
+                       stacked=stacked, alpha=alpha, nature='Generation')
 
-    def plot_edc_energy_stored(self, alpha=1):
-        if not self.edc_transducers:
-            raise ValueError("There is not any defined EDC transducer")
-        edc_transducer = self.edc_transducers[0]
-        t, edc_id, energy = edc_transducer.get_edc_energy_stored_data()
-        plot_edc_energy(t, edc_id, energy, alpha=alpha)
+    @staticmethod
+    def plot_edc_energy_stored(path: str, sep: str = ',', alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_energy(df['time'], df['consumer_id'], df['energy_stored'], alpha=alpha)
 
-    def plot_ul_bw(self, alpha=1):
-        if not self.radio_transducers:
-            raise ValueError("There is not any defined radio transducer")
-        radio_transducer = self.radio_transducers[0]
-        time, ue_id, ap_id, bandwidth, rate, efficiency = radio_transducer.get_ul_radio_data()
-        plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, alpha=alpha)
+    @staticmethod
+    def plot_ul_bw(path: str, sep: str = ',', alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_bw(df['sim_time'], df['ue_id'], df['ap_id'], df['bandwidth'], df['rate'], df['efficiency'], alpha=alpha)
 
-    def plot_dl_bw(self, alpha=1):
-        if not self.radio_transducers:
-            raise ValueError("There is not any defined radio transducer")
-        radio_transducer = self.radio_transducers[0]
-        time, ue_id, ap_id, bandwidth, rate, efficiency = radio_transducer.get_dl_radio_data()
-        plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, link='Downlink', alpha=alpha)
-
-
-class MercuryFogModel(Coupled):
-    def __init__(self, name, edge_fed, core, crosshaul, access_points, radio, iot_devices, ue_delay_transducers,
-                 edc_transducers, radio_transducers):
-        """
-        :param str name: xDEVS model name
-        :param EdgeFederation edge_fed: Edge Federation Layer Model
-        :param Core core: Core Network Layer Model
-        :param Crosshaul crosshaul: Crosshaul Network Layer Model
-        :param AccessPoints access_points: Access Points Layer Model
-        :param Radio radio: Radio Network Layer Model
-        :param IoTDevices iot_devices: IoT devices Layer Model
-        :param list ue_delay_transducers: list of User Equipment Delay transducers
-        :param list edc_transducers: list of Edge Data Center transducers
-        :param list radio_transducers: list of Radio Interface transducers
-        """
-        super().__init__(name)
-
-        # Add components
-        logging.info("    Adding Layers...")
-        for component in [edge_fed, crosshaul, core, access_points, radio, iot_devices]:
-            self.add_component(component)
-        logging.info("    Layers added")
-
-        logging.info("    Coupling Layers...")
-        self.internal_edge_fed_crosshaul(edge_fed, crosshaul)
-        self.internal_core_crosshaul(core, crosshaul)
-        self.internal_crosshaul_access_points(crosshaul, access_points)
-        self.internal_access_points_radio(access_points, radio)
-        self.internal_radio_iot_devices(radio, iot_devices)
-        self.internal_access_points_iot_devices(access_points, iot_devices)
-        logging.info("    Layers Coupled")
-
-        logging.info("    Adding and Coupling Transducers...")
-        self.internal_transducers(iot_devices, ue_delay_transducers, edge_fed,
-                                  edc_transducers, radio, radio_transducers)
-        logging.info("    Transducers Added and Coupled")
-
-    def internal_edge_fed_crosshaul(self, edge_fed: EdgeFederation, crosshaul: Crosshaul):
-        self.add_coupling(edge_fed.output_crosshaul, crosshaul.input_data)
-        for edc_id in edge_fed.edcs:
-            self.add_coupling(crosshaul.outputs_node_to[edc_id], edge_fed.inputs_crosshaul[edc_id])
-
-    def internal_core_crosshaul(self, core: Core, crosshaul: Crosshaul):
-        self.add_coupling(core.output_crosshaul, crosshaul.input_data)
-        for function in core.core_functions:
-            self.add_coupling(crosshaul.outputs_node_to[function], core.inputs_crosshaul[function])
-
-    def internal_crosshaul_access_points(self, crosshaul: Crosshaul, access_points: AccessPoints):
-        self.add_coupling(access_points.output_crosshaul, crosshaul.input_data)
-        for ap_id in access_points.ap_ids:
-            self.add_coupling(crosshaul.outputs_node_to[ap_id], access_points.inputs_crosshaul[ap_id])
-
-    def internal_access_points_radio(self, access_points: AccessPoints, radio: Radio):
-        self.add_coupling(access_points.output_radio_bc, radio.input_pbch)
-        self.add_coupling(access_points.output_radio_control_dl, radio.input_pdcch)
-        self.add_coupling(access_points.output_radio_transport_dl, radio.input_pdsch)
-        self.add_coupling(access_points.output_connected_ues, radio.input_enable_channels)
-        for ap_id in access_points.ap_ids:
-            self.add_coupling(radio.outputs_pucch[ap_id], access_points.inputs_radio_control_ul[ap_id])
-            self.add_coupling(radio.outputs_pusch[ap_id], access_points.inputs_radio_transport_ul[ap_id])
-
-    def internal_radio_iot_devices(self, radio: Radio, iot_devices: IoTDevices):
-        self.add_coupling(iot_devices.output_radio_control_ul, radio.input_pucch)
-        self.add_coupling(iot_devices.output_radio_transport_ul, radio.input_pusch)
-        for ue_id in iot_devices.ue_ids:
-            self.add_coupling(radio.outputs_pbch[ue_id], iot_devices.inputs_radio_bc[ue_id])
-            self.add_coupling(radio.outputs_pdcch[ue_id], iot_devices.inputs_radio_control_dl[ue_id])
-            self.add_coupling(radio.outputs_pdsch[ue_id], iot_devices.inputs_radio_transport_dl[ue_id])
-            # self.add_coupling(iot_devices.output_repeat_location, radio.input_repeat_location)
-
-    def internal_access_points_iot_devices(self, access_points: AccessPoints, iot_devices: IoTDevices):
-        self.add_coupling(iot_devices.output_repeat_location, access_points.input_repeat_pss)
-
-    def internal_transducers(self, iot_devices: IoTDevices, ue_delay_transducers: List, edge_fed: EdgeFederation,
-                             edc_transducers: List, radio: Radio, radio_transducers: List):
-        for delay_transducer in ue_delay_transducers:
-            self.add_component(delay_transducer)
-            self.add_coupling(iot_devices.output_service_delay_report, delay_transducer.input_service_delay_report)
-        for edge_fed_transducer in edc_transducers:
-            self.add_component(edge_fed_transducer)
-            self.add_coupling(edge_fed.output_edc_report, edge_fed_transducer.input_edc_report)
-        for radio_transducer in radio_transducers:
-            self.add_component(radio_transducer)
-            self.add_coupling(radio.output_ul_report, radio_transducer.input_new_ul_mcs)
-            self.add_coupling(radio.output_dl_report, radio_transducer.input_new_dl_mcs)
-
-
-class MercuryFogModelShortcut(Coupled):
-    def __init__(self, name, edge_fed: EdgeFederation, core: Core, access_points: AccessPoints,
-                 radio: RadioShortcut, iot_devices: IoTDevices, ue_delay_transducers, edc_transducers):
-        super().__init__(name)
-
-        logging.info("    Building Shortcut Module...")
-        ue_ids_list = [ue_id for ue_id in iot_devices.ue_ids]
-        ap_ids_list = [ap_id for ap_id in access_points.ap_ids]
-        edc_ids_list = [edc_id for edc_id in edge_fed.edcs]
-        core_ids_list = [core_id for core_id in core.core_functions]
-        shortcut = Shortcut(ue_ids_list, ap_ids_list, edc_ids_list, core_ids_list, 'shortcut')
-        logging.info("    Shortcut Module built")
-
-        logging.info("    Adding Layers...")
-        for component in [edge_fed, core, access_points, radio, iot_devices, shortcut]:
-            self.add_component(component)
-        logging.info("    Layers added")
-
-        logging.info("    Coupling Layers...")
-        self.add_coupling(edge_fed.output_crosshaul, shortcut.input_xh)
-        for edc in edc_ids_list:
-            self.add_coupling(shortcut.outputs_xh[edc], edge_fed.inputs_crosshaul[edc])
-
-        self.add_coupling(core.output_crosshaul, shortcut.input_xh)
-        for function in core_ids_list:
-            self.add_coupling(shortcut.outputs_xh[function], core.inputs_crosshaul[function])
-
-        self.add_coupling(access_points.output_crosshaul, shortcut.input_xh)
-        self.add_coupling(access_points.output_radio_bc, radio.input_pbch)
-        self.add_coupling(access_points.output_radio_control_dl, shortcut.input_radio_control)
-        self.add_coupling(access_points.output_radio_transport_dl, shortcut.input_radio_transport)
-        for ap in ap_ids_list:
-            self.add_coupling(shortcut.outputs_xh[ap], access_points.inputs_crosshaul[ap])
-            self.add_coupling(shortcut.outputs_radio_control[ap], access_points.inputs_radio_control_ul[ap])
-            self.add_coupling(shortcut.outputs_radio_transport[ap], access_points.inputs_radio_transport_ul[ap])
-
-        self.add_coupling(iot_devices.output_repeat_location, access_points.input_repeat_pss)
-        self.add_coupling(iot_devices.output_radio_control_ul, shortcut.input_radio_control)
-        self.add_coupling(iot_devices.output_radio_transport_ul, shortcut.input_radio_transport)
-        for ue in ue_ids_list:
-            self.add_coupling(radio.outputs_pbch[ue], iot_devices.inputs_radio_bc[ue])
-            self.add_coupling(shortcut.outputs_radio_control[ue], iot_devices.inputs_radio_control_dl[ue])
-            self.add_coupling(shortcut.outputs_radio_transport[ue], iot_devices.inputs_radio_transport_dl[ue])
-        logging.info("    Layers Coupled")
-
-        logging.info("    Adding and Coupling Transducers...")
-        for delay_transducer in ue_delay_transducers:
-            self.add_component(delay_transducer)
-            self.add_coupling(iot_devices.output_service_delay_report, delay_transducer.input_service_delay_report)
-        for edge_fed_transducer in edc_transducers:
-            self.add_component(edge_fed_transducer)
-            self.add_coupling(edge_fed.output_edc_report, edge_fed_transducer.input_edc_report)
-        logging.info("    Transducers Added and Coupled")
-
-
-class MercuryLite(Coupled):
-    def __init__(self, name, edge_fed: EdgeFederation, core: CoreLite, iot_devices: IoTDevicesLite, mobility: Nodes,
-                 ue_delay_transducers, edc_transducers):
-        super().__init__(name)
-
-        logging.info("    Building Multiplexer Module...")
-        mux = NetworkMultiplexer([*edge_fed.edcs, core.sdn_controller_id, *iot_devices.ue_ids])
-        logging.info("    Multiplexer Module built")
-
-        logging.info("    Adding Layers...")
-        for component in [edge_fed, core, iot_devices, mobility, mux]:
-            self.add_component(component)
-        logging.info("    Layers added")
-
-        logging.info("    Coupling Layers...")
-        self.add_coupling(edge_fed.output_crosshaul, mux.input)
-        self.add_coupling(core.output_network, mux.input)
-        self.add_coupling(iot_devices.output_network, mux.input)
-        self.add_coupling(mobility.output_node_location, core.input_node_location)
-        for edc_id in edge_fed.edcs:
-            self.add_coupling(mux.outputs[edc_id], edge_fed.inputs_crosshaul[edc_id])
-        self.add_coupling(mux.outputs[core.sdn_controller_id], core.input_network)
-        for ue_id in iot_devices.ue_ids:
-            self.add_coupling(mux.outputs[ue_id], iot_devices.inputs_network[ue_id])
-        logging.info("    Layers Coupled")
-
-        logging.info("    Adding and Coupling Transducers...")
-        for delay_transducer in ue_delay_transducers:
-            self.add_component(delay_transducer)
-            self.add_coupling(iot_devices.output_service_delay_report, delay_transducer.input_service_delay_report)
-        for edge_fed_transducer in edc_transducers:
-            self.add_component(edge_fed_transducer)
-            self.add_coupling(edge_fed.output_edc_report, edge_fed_transducer.input_edc_report)
-        logging.info("    Transducers Added and Coupled")
+    @staticmethod
+    def plot_dl_bw(path: str, sep: str = ',', alpha=1):
+        df = pd.read_csv(path, sep=sep)
+        plot_bw(df['time'], df['ue_id'], df['ap_id'], df['bandwidth'], df['rate'], df['efficiency'],
+                link='Downlink', alpha=alpha)

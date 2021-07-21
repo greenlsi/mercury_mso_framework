@@ -1,77 +1,80 @@
 from xdevs.models import Port
-from .common.multiplexer import Multiplexer
-from .common.packet.packet import PhysicalPacket, NetworkPacket
+from mercury.msg.network import PhysicalPacket, NetworkPacket
+from .common import Multiplexer
+
+
+class NetworkMultiplexer(Multiplexer):
+    def __init__(self, fixed_nodes: set):
+        """
+        Network communication layer multiplexer model
+        :param fixed_nodes: set containing the IDs of all the fixed nodes in the scenario (i.e., APs, EDCs, and CNFs)
+        """
+        self.input = Port(NetworkPacket, 'input')
+        self.outputs = {node_id: Port(NetworkPacket, 'output_' + node_id) for node_id in fixed_nodes}
+        self.output_ues = Port(NetworkPacket, 'output_ues')  # Output port for messages to IoT devices
+        super().__init__('network_mux', fixed_nodes)
+        self.add_in_port(self.input)
+        [self.add_out_port(port) for port in self.outputs.values()]
+        self.add_out_port(self.output_ues)
+
+    def build_routing_table(self):
+        self.routing_table[self.input] = {node_id: self.outputs[node_id] for node_id in self.node_ids}
+
+    def get_node_to(self, msg: NetworkPacket):
+        return msg.node_to
+
+    def catch_out_port_error(self, in_port: Port, node_to: str) -> Port:
+        """If receiver node is not in the fixed nodes set, then the message is sent to the IoT devices layer"""
+        return self.output_ues
 
 
 class Shortcut(Multiplexer):
+    def __init__(self, aps: set, edcs: set, cnfs: set, name: str = 'shortcut'):
+        """
+        Shortcut model for MErcury Lite
+        :param aps:
+        :param edcs:
+        :param cnfs:
+        :param name:
+        """
 
-    def __init__(self, ue_ids_list, ap_ids_list, edc_ids_list, core_ids_list, name='shortcut'):
+        node_ids = {*aps, *edcs, *cnfs}
 
-        node_id_list = [*ue_ids_list, *ap_ids_list, *edc_ids_list, *core_ids_list]
-        assert len(node_id_list) == len(set(node_id_list))
+        self.ap_ids = aps
+        self.edc_ids = edcs
+        self.cnf_ids = cnfs
 
-        self.ue_ids_list = ue_ids_list
-        self.ap_ids_list = ap_ids_list
-        self.edc_ids_list = edc_ids_list
-        self.core_ids_list = core_ids_list
+        self.input_xh_data = Port(PhysicalPacket, 'input_xh_data')
+        self.input_radio_data = Port(PhysicalPacket, 'input_radio_data')
+        self.input_radio_control = Port(PhysicalPacket, 'input_control')
 
-        self.input_xh = Port(PhysicalPacket, 'input_xh')
-        self.input_radio_control = Port(PhysicalPacket, 'input_radio_control')
-        self.input_radio_transport = Port(PhysicalPacket, 'input_radio_transport')
+        self.outputs_xh_data = {node_id: Port(PhysicalPacket, 'output_xh_data_' + node_id) for node_id in node_ids}
+        self.outputs_radio_data = {ap_id: Port(PhysicalPacket, 'output_radio_data_' + ap_id) for ap_id in aps}
+        self.outputs_radio_control = {ap_id: Port(PhysicalPacket, 'output_control_' + ap_id) for ap_id in aps}
 
-        self.outputs_xh = dict()
-        self.outputs_radio_control = dict()
-        self.outputs_radio_transport = dict()
-        for node_id in [*ap_ids_list, *edc_ids_list, *core_ids_list]:
-            self.outputs_xh[node_id] = Port(PhysicalPacket, 'output_xh_' + node_id)
-        for out_ports in [(self.outputs_radio_control, 'control'), (self.outputs_radio_transport, 'transport')]:
-            for node_id in [*ue_ids_list, *ap_ids_list]:
-                out_ports[0][node_id] = Port(PhysicalPacket, 'output_{}_{}'.format(out_ports[1], node_id))
+        self.output_data_ues = Port(PhysicalPacket, 'output_data_ues')
+        self.output_control_ues = Port(PhysicalPacket, 'output_control_ues')
 
-        super().__init__(name, node_id_list)
+        super().__init__(name, node_ids)
 
-        self.add_in_port(self.input_xh)
-        self.add_in_port(self.input_radio_control)
-        self.add_in_port(self.input_radio_transport)
-        for node_id in [*ap_ids_list, *edc_ids_list, *core_ids_list]:
-            self.add_out_port(self.outputs_xh[node_id])
-        for out_ports in [(self.outputs_radio_control, 'control'), (self.outputs_radio_transport, 'transport')]:
-            for node_id in [*ue_ids_list, *ap_ids_list]:
-                self.add_out_port(out_ports[0][node_id])
+        [self.add_in_port(port) for port in [self.input_xh_data, self.input_radio_data, self.input_radio_control]]
+        for ports in [self.outputs_xh_data, self.outputs_radio_control, self.outputs_radio_data]:
+            [self.add_out_port(port) for port in ports.values()]
+        self.add_out_port(self.output_control_ues)
+        self.add_out_port(self.output_data_ues)
 
     def build_routing_table(self):
-        self.routing_table[self.input_xh] = dict()
-        for ue_id in self.ue_ids_list:
-            self.routing_table[self.input_xh][ue_id] = self.outputs_radio_transport[ue_id]
-        for node_id in [*self.ap_ids_list, *self.edc_ids_list, *self.core_ids_list]:
-            self.routing_table[self.input_xh][node_id] = self.outputs_xh[node_id]
-
-        self.routing_table[self.input_radio_control] = dict()
-        for node_id in [*self.ap_ids_list, *self.ue_ids_list]:
-            self.routing_table[self.input_radio_control][node_id] = self.outputs_radio_control[node_id]
-
-        self.routing_table[self.input_radio_transport] = dict()
-        for edc_id in self.edc_ids_list:
-            self.routing_table[self.input_radio_transport][edc_id] = self.outputs_xh[edc_id]
-        for node_id in [*self.ue_ids_list, *self.ap_ids_list]:
-            self.routing_table[self.input_radio_transport][node_id] = self.outputs_radio_transport[node_id]
+        self.routing_table[self.input_xh_data] = {node_id: self.outputs_xh_data[node_id] for node_id in self.node_ids}
+        self.routing_table[self.input_radio_data] = dict()
+        for cnf_id in self.cnf_ids:
+            self.routing_table[self.input_radio_data][cnf_id] = self.outputs_xh_data[cnf_id]
+        for edc_id in self.edc_ids:
+            self.routing_table[self.input_radio_data][edc_id] = self.outputs_xh_data[edc_id]
+        self.routing_table[self.input_radio_control] = {ap_id: self.outputs_radio_control[ap_id] for ap_id in self.ap_ids}
 
     def get_node_to(self, msg: PhysicalPacket):
         return msg.data.node_to
 
-
-class NetworkMultiplexer(Multiplexer):
-    def __init__(self, node_id_list, name="network_mux"):
-        self.input = Port(NetworkPacket, 'input')
-        self.outputs = {node_id: Port(NetworkPacket, 'output_' + node_id) for node_id in node_id_list}
-        super().__init__(name, node_id_list)
-        self.add_in_port(self.input)
-        [self.add_out_port(port) for port in self.outputs.values()]
-
-    def build_routing_table(self):
-        self.routing_table[self.input] = dict()
-        for node_id in self.node_id_list:
-            self.routing_table[self.input][node_id] = self.outputs[node_id]
-
-    def get_node_to(self, msg: NetworkPacket):
-        return msg.node_to
+    def catch_out_port_error(self, in_port: Port, node_to: str) -> Port:
+        """If receiver node is not in the fixed nodes set, then the message is sent to the IoT devices layer."""
+        return self.output_control_ues if in_port == self.input_radio_control else self.output_data_ues

@@ -1,1 +1,1 @@
-from .ue import UserEquipment, UserEquipmentLite, UserEquipmentConfiguration
+from .ue import UserEquipment, UserEquipmentLite

@@ -1,94 +1,69 @@
-from typing import List
 from xdevs.models import Coupled, Port
-from ...common.packet.packet import PhysicalPacket, NetworkPacket, NetworkPacketConfiguration
-from ...common.packet.apps.ran import RadioAccessNetworkConfiguration
-from ...common.packet.apps.service import ServiceDelayReport
+from mercury.config.iot_devices import UserEquipmentConfig
+from mercury.msg.network import PhysicalPacket, NetworkPacket
+from mercury.msg.iot_devices import ServiceDelayReport
 from .ue_antenna import UserEquipmentAntenna
 from .service_mux import UEServiceMux
 from .service import Service
 from .access_manager import AccessManager
 
-from ...common.packet.apps.service import ServiceConfiguration
-from ...network.node import TransceiverConfiguration, NodeConfiguration
-
-
-class UserEquipmentConfiguration:
-    def __init__(self, ue_id: str, service_config_list: List[ServiceConfiguration],
-                 radio_trx: TransceiverConfiguration = None, mobility_name: str = None, **kwargs):
-        """
-
-        :param ue_id:
-        :param service_config_list:
-        :param radio_trx:
-        :param mobility_name:
-        :param kwargs:
-        """
-        self.ue_id = ue_id
-        for service_config in service_config_list:
-            assert isinstance(service_config, ServiceConfiguration)
-        self.service_config_list = service_config_list
-        self.radio_node = NodeConfiguration(ue_id, radio_trx, mobility_name, **kwargs)
-        self.ue_location = self.radio_node.initial_location
-
 
 class UserEquipment(Coupled):
-    def __init__(self, name: str, ue_config: UserEquipmentConfiguration, rac_config: RadioAccessNetworkConfiguration,
-                 network_config: NetworkPacketConfiguration, t_initial: float = 0):
+    def __init__(self, ue_config: UserEquipmentConfig, guard_time: float = 0):
         """
         User Equipment xDEVS model
-        :param name: xDEVS model name
-        :param ue_config: User Equipment Configuration
-        :param rac_config: Radio Access Network service packets configuration
-        :param network_config: Network packets configuration
-        :param t_initial: Initial guard time in order to avoid identical simultaneous behavior between UEs
-        """
-        super().__init__(name)
 
+        :param ue_config: User Equipment Configuration
+        :param guard_time: Initial guard time in order to avoid identical simultaneous behavior between UEs
+        """
         # Unpack configuration parameters
         ue_id = ue_config.ue_id
-        service_config_list = ue_config.service_config_list
-        service_ids = [service_config.service_id for service_config in service_config_list]
+        services_config = ue_config.services_config
+        t_start = ue_config.t_start
+        t_end = ue_config.t_end
+
+        super().__init__('iot_devices_{}'.format(ue_id))
 
         self.ue_id = ue_id
 
         # Define and add components
-        antenna = UserEquipmentAntenna(name + '_antenna', ue_id, network_config)
-        access_manager = AccessManager(name + '_access_manager', ue_id, rac_config)
-        service_mux = UEServiceMux(name + '_service_mux', service_ids)
-        services = [Service(name + service.service_id, ue_id, service, network_config, t_initial)
-                    for service in service_config_list]
+        antenna = UserEquipmentAntenna(ue_id)
+        self.access_manager = AccessManager(ue_id, t_start)
+        service_mux = UEServiceMux(ue_id, set(services_config.keys()))
+        services = [Service(ue_id, service_config, guard_time, t_start=t_start, t_end=t_end)
+                    for service_config in services_config.values()]
         self.add_component(antenna)
-        self.add_component(access_manager)
+        self.add_component(self.access_manager)
         self.add_component(service_mux)
         [self.add_component(service) for service in services]
 
         # I/O ports
-        self.input_radio_bc = Port(PhysicalPacket, name + '_input_radio_bc')
-        self.input_radio_control_dl = Port(PhysicalPacket, name + '_input_radio_control_dl')
-        self.input_radio_transport_dl = Port(PhysicalPacket, name + '_input_radio_transport_dl')
-        self.output_radio_control_ul = Port(PhysicalPacket, name + '_output_radio_control_ul')
-        self.output_radio_transport_ul = Port(PhysicalPacket, name + '_output_radio_transport_ul')
+        self.input_radio_bc = Port(PhysicalPacket, 'input_radio_bc')
+        self.input_radio_control_dl = Port(PhysicalPacket, 'input_radio_control_dl')
+        self.input_radio_transport_dl = Port(PhysicalPacket, 'input_radio_transport_dl')
+        self.output_radio_control_ul = Port(PhysicalPacket, 'output_radio_control_ul')
+        self.output_radio_transport_ul = Port(PhysicalPacket, 'output_radio_transport_ul')
         self.add_in_port(self.input_radio_bc)
         self.add_in_port(self.input_radio_control_dl)
         self.add_in_port(self.input_radio_transport_dl)
         self.add_out_port(self.output_radio_control_ul)
         self.add_out_port(self.output_radio_transport_ul)
 
-        self.output_repeat_location = Port(str, 'output_repeat_location')
+        self.output_repeat_pss = Port(str, 'output_repeat_pss')
         self.output_service_delay_report = Port(ServiceDelayReport, 'output_service_delay_report')
-        self.add_out_port(self.output_repeat_location)
+        self.add_out_port(self.output_repeat_pss)
         self.add_out_port(self.output_service_delay_report)
 
         self.external_couplings_antenna(antenna)
-        self.external_couplings_access(access_manager)
+        self.external_couplings_access(self.access_manager)
         for service in services:
             self.external_couplings_service(service)
 
-        self.internal_couplings_antenna_access(antenna, access_manager)
+        self.internal_couplings_antenna_access(antenna, self.access_manager)
         self.internal_couplings_antenna_mux(antenna, service_mux)
         for service in services:
             self.internal_couplings_antenna_service(antenna, service)
-            self.internal_couplings_access_service(access_manager, service)
+            self.internal_couplings_access_service(self.access_manager, service)
             self.internal_couplings_mux_service(service_mux, service)
 
     def external_couplings_antenna(self, antenna: UserEquipmentAntenna):
@@ -102,7 +77,7 @@ class UserEquipment(Coupled):
         self.add_coupling(service.output_service_delay_report, self.output_service_delay_report)
 
     def external_couplings_access(self, access: AccessManager):
-        self.add_coupling(access.output_repeat_location, self.output_repeat_location)
+        self.add_coupling(access.output_repeat_location, self.output_repeat_pss)
 
     def internal_couplings_antenna_access(self, antenna: UserEquipmentAntenna, access_manager: AccessManager):
         self.add_coupling(antenna.output_pss, access_manager.input_pss)
@@ -134,19 +109,19 @@ class UserEquipment(Coupled):
 
 
 class UserEquipmentLite(Coupled):
-    def __init__(self, name: str, ue_config: UserEquipmentConfiguration,
-                 network_config: NetworkPacketConfiguration, core_id: str, t_initial: float = 0):
-        super().__init__(name)
+    def __init__(self, ue_config: UserEquipmentConfig, guard_time: float = 0):
 
+        services_config = ue_config.services_config
         ue_id = ue_config.ue_id
-        service_config_list = ue_config.service_config_list
-        service_ids = [service_config.service_id for service_config in service_config_list]
+        t_start = ue_config.t_start
+        t_end = ue_config.t_end
 
+        super().__init__('iot_devices_{}'.format(ue_id))
         self.ue_id = ue_id
 
         # Define and add components
-        services = [Service(name + service.service_id, ue_id, service, network_config, t_initial, lite_id=core_id)
-                    for service in service_config_list]
+        services = [Service(ue_id, service_config, guard_time, t_start, t_end, lite=True)
+                    for service_config in services_config.values()]
         [self.add_component(service) for service in services]
 
         self.input_network = Port(NetworkPacket, 'input_network')
@@ -157,7 +132,7 @@ class UserEquipmentLite(Coupled):
         self.add_out_port(self.output_service_delay_report)
 
         if len(services) > 1:  # More than one service -> we add a multiplexer
-            service_mux = UEServiceMux(name + '_service_mux', service_ids)
+            service_mux = UEServiceMux(ue_id, set(services_config.keys()))
             self.add_component(service_mux)
             self.add_coupling(self.input_network, service_mux.input_network)
             for service in services:

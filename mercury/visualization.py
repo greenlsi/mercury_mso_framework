@@ -3,12 +3,24 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-def plot_ue_service_delay(time, ue_id, delay, alpha=1):
+aux = {
+    'get_server': 'Get server delay',
+    'start_session': 'Start session delay',
+    'stop_session': 'Stop session delay',
+    'srv_request': 'Service request delay',
+}
+
+
+def plot_ue_service_delay(time, delay, ue_id=None, service_id=None, action=None, alpha=1):
     delay_ = apply_ema(delay, alpha)
     plt.plot(time, delay_)
     plt.xlabel('time [s]', fontsize=12)
-    plt.ylabel('perceived delay [s]', fontsize=12)
-    title = 'Service Delay Perceived by User Equipments'
+    plt.ylabel('delay [s]', fontsize=12)
+    title = aux.get(action, 'Delay')
+    if ue_id is not None:
+        title += ' perceived by UE {}'.format(ue_id)
+    if service_id is not None:
+        title += ' for service {}'.format(service_id)
     if alpha < 1:
         title += ' (EMA,alpha={})'.format(alpha)
     plt.title(title)
