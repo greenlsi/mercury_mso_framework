@@ -27,4 +27,4 @@ def add_file_handler(path='mercury.log', formatting='%(asctime)s %(levelname)-8s
 
 
 def logging_overhead(clock: float, overhead: str) -> str:
-    return "[t=%.2f] " % clock + overhead
+    return f'[t={clock:.2f}] {overhead}'

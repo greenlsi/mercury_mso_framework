@@ -1,186 +1,312 @@
-from typing import Optional, Dict, Tuple, Any
-from .network import NodeConfig, TransceiverConfig
+from __future__ import annotations
+from typing import Any
+from .client import ServicesConfig
+from .cloud import CloudConfig
+from .network import StaticNodeConfig, TransceiverConfig
+from .packet import PacketConfig
+from .smart_grid import ConsumerConfig
 
 
-class ResourceManagerConfig:
-    def __init__(self, mapping_name: str = 'first_fit', mapping_config: Optional[Dict[str, Any]] = None,
-                 hot_standby_name: Optional[str] = None, hot_standby_config: Optional[Dict[str, Any]] = None,
-                 cool_down: float = 0):
+class ServiceTasksConfig:
+    def __init__(self, service_id: str, max_parallel_tasks: int, proc_t_id: str = 'constant',
+                 proc_t_config: dict[str, Any] = None, power_id: str = 'constant', power_config: dict[str, Any] = None):
         """
-        Resource Manager Configuration.
-        :param mapping_name: Session dispatching cost function name. By default, it uses the First Fit algorithm
-        :param mapping_config: Configuration parameters for the dispatching cost function.
-        :param hot_standby_name: Hot standby strategy function name.
-        :param hot_standby_config: Configuration parameters for the Hot standby strategy function.
-        :param cool_down: Hot standby cool-down period (i.e., minimum amount of time between hot standby explorations).
-                          By default, it is set to 0 (i.e., no cool-down period).
+        Processing unit-specific process configuration.
+        :param service_id: Service ID.
+        :param max_parallel_tasks: maximum number of tasks that the processing unit can execute in parallel.
+                                   It must be greater than 0 (i.e., at least one concurrent task execution).
+        :param proc_t_id: processing time model ID to use by the PU when executing tasks of this service.
+        :param proc_t_config: processing time model configuration parameters.
+        :param power_id: power consumption model ID to use by the PU when executing tasks of this service.
+        :param power_config: power consumption model configuration parameters.
         """
-        self.mapping_name: str = mapping_name
-        self.mapping_config: Dict[str, Any] = dict() if mapping_config is None else mapping_config
-        self.hot_standby_name: Optional[str] = hot_standby_name
-        self.hot_standby_config: Dict[str, Any] = dict() if hot_standby_config is None else hot_standby_config
-        self.cool_down: float = cool_down
-
-
-class ProcessingUnitProcessConfig:
-    def __init__(self, t_start: float = 0, t_stop: float = 0, t_process: float = 0,
-                 u_idle: float = 0, u_busy: float = 0):
-        """
-        Processing Unit-specific process configuration.
-        :param t_start: time (in seconds) required to start a service context. By default, it is 0.
-        :param t_stop: time (in seconds) required to stop a service context. By default, it is 0.
-        :param t_process: time (in seconds) required to process a service request. By default, it is 0.
-        :param u_idle: resource utilization (in %) consumed by process when session is idling. By default, it is 0%.
-        :param u_busy: resource utilization (in %) consumed by process when session is busy. By default, it is 0%.
-        """
-        if t_start < 0 or t_stop < 0 or t_process < 0 or u_idle < 0 or u_busy < 0:
-            raise ValueError('PU process configuration values cannot be less than 0')
-        if not u_busy > 0:
-            raise ValueError('PU process utilization when busy must be greater than 0%')
-        self.t_start: float = t_start
-        self.t_stop: float = t_stop
-        self.t_process: float = t_process
-        self.u_idle: float = u_idle
-        self.u_busy: float = u_busy
-
-    @property
-    def max_u(self) -> float:
-        """Maximum resource utilization (in %) consumed by process"""
-        return max(self.u_idle, self.u_busy)
-
-    @property
-    def min_u(self) -> float:
-        """Minimum resource utilization (in %) consumed by process"""
-        return min(self.u_idle, self.u_busy)
-
-    @property
-    def t_total(self) -> float:
-        """Total time required for a session-less request"""
-        return self.t_start + self.t_process + self.t_stop
+        from mercury.plugin import AbstractFactory, ProcessingUnitProcTimeModel
+        if not ServicesConfig.srv_defined(service_id):
+            raise ValueError(f'Service {service_id} not defined')
+        if max_parallel_tasks < 1:
+            raise ValueError('PU must be able to process at least 1 service task concurrently')
+        self.max_parallel_tasks: int = max_parallel_tasks
+        srv_config = ServicesConfig.SERVICES[service_id]
+        self.sess_required: bool = srv_config.sess_required
+        self.t_deadline: float = srv_config.sess_config.t_deadline if self.sess_required else srv_config.t_deadline
+        self.stream: bool = self.sess_required and ServicesConfig.SERVICES[service_id].sess_config.stream
+        proc_t_config = {'max_parallel_tasks': max_parallel_tasks} if proc_t_config is None \
+            else {**proc_t_config, 'max_parallel_tasks': max_parallel_tasks}
+        self.proc_t_model: ProcessingUnitProcTimeModel = AbstractFactory.create_edc_pu_proc_t(proc_t_id, **proc_t_config)
+        self.power_id: str = power_id
+        self.power_config: dict[str, Any] = dict() if power_config is None else power_config
 
 
 class ProcessingUnitConfig:
-    def __init__(self, pu_type: str, services: Dict[str, Dict[str, float]],
-                 dvfs_table: Optional[Dict[float, Any]] = None, t_on: float = 0, t_off: float = 0,
-                 scheduling_name: str = 'fcfs', scheduling_config: Optional[Dict[str, Any]] = None,
-                 power_name: Optional[str] = None, power_config: Optional[Dict[str, Any]] = None,
-                 temp_name: Optional[str] = None, temp_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, pu_id: str, t_on: float = 0, t_off: float = 0,
+                 scheduling_id: str = 'fcfs', scheduling_config: dict[str, Any] = None,
+                 default_power_id: str = 'constant', default_power_config: dict[str, Any] = None,
+                 temperature_id: str = 'constant', temperature_config: dict[str, Any] = None):
         """
         Processing Unit Configuration
-        :param pu_type: Processing unit model type.
-        :param services: dictionary {service_id: {SERVICE_CONFIG}}.  TODO hacer service config con un objeto
-        :param dvfs_table: dictionary containing DVFS table {max_u_1: {dvfs_conf_1}, ..., 100: {dvfs_conf_N}}.
+        :param pu_id: Processing unit model type.
         :param t_on: time required by the processing unit for switching on.
         :param t_off: time required by the processing unit to switching off.
-        :param scheduling_name: Scheduling function name. By default, it is a first come first served scheduler.
-        :param scheduling_config: Configuration parameters of PU's scheduling function.
-        :param power_name: Power consumption model name. By default, no power consumption model is implemented.
-        :param power_config: Configuration parameters of power consumption model.
-        :param temp_name: Temperature model name. By default, no temperature model is implemented.
-        :param temp_config: Configuration parameters of temperature model.
+        :param scheduling_id: scheduler model ID. By default, it is set to 'first come-first served'.
+        :param scheduling_config: Configuration parameters of the sheduling model.
+        :param default_power_id: default power consumption model ID. By default, it is set to constant.
+        :param default_power_config: configuration parameters for the default power consumption model.
+        :param temperature_id: temperature model ID. By default, it is set to constant.
+        :param temperature_config: Configuration parameters of the temperature model.
         """
-        self.pu_type: str = pu_type
-        self.services: Dict[str, ProcessingUnitProcessConfig] = {service: ProcessingUnitProcessConfig(**process)
-                                                                 for service, process in services.items()}
-        self.dvfs_table: Dict[float, Any] = {100: dict()} if dvfs_table is None else dvfs_table
+        self.pu_id: str = pu_id
+        self.srv_configs: dict[str, ServiceTasksConfig] = dict()
         self.t_on: float = t_on
         self.t_off: float = t_off
-        self.scheduling_name: str = scheduling_name
-        self.scheduling_config: Dict[str, Any] = scheduling_config if scheduling_config is not None else dict()
-        self.power_name: Optional[str] = power_name
-        self.power_config: Dict[str, Any] = power_config if power_config is not None else dict()
-        self.temp_name: Optional[str] = temp_name
-        self.temp_config: Dict[str, Any] = temp_config if temp_config is not None else dict()
+        self.scheduling_id: str = scheduling_id
+        self.scheduling_config: dict[str, Any] = dict() if scheduling_config is None else scheduling_config
+        self.default_power_id: str = default_power_id
+        self.default_power_config: dict[str, Any] = dict() if default_power_config is None else default_power_config
+        self.temperature_id: str = temperature_id
+        self.temperature_config: dict[str, Any] = dict() if temperature_config is None else temperature_config
+
+    def add_service(self, service_id: str, max_parallel_tasks: int,
+                    proc_t_id: str = 'constant', proc_t_config: dict[str, Any] = None,
+                    power_id: str = 'constant', power_config: dict[str, Any] = None):
+        self.srv_configs[service_id] = ServiceTasksConfig(service_id, max_parallel_tasks, proc_t_id,
+                                                          proc_t_config, power_id, power_config)
 
 
 class CoolerConfig:
-    def __init__(self, cooler_type: str,
-                 power_name: Optional[str] = None, power_config: Optional[Dict[str, Any]] = None,
-                 temp_name: Optional[str] = None, temp_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, cooler_id: str, power_id: str = 'constant', power_config: dict[str, Any] = None):
         """
         Configuration for EDC cooler.
-        :param cooler_type: type of the cooler.
-        :param power_name:  name of the power model.
+        :param cooler_id: type of the cooler.
+        :param power_id:  name of the power model. By default, it is set to constant.
         :param power_config: configuration parameters for the power model.
-        :param temp_name: name of the temperature model.
-        :param temp_config: configuration parameters for the temperature model.
         """
-        self.cooler_type: str = cooler_type
-        self.power_name: Optional[str] = power_name
-        self.power_config: Dict[str, Any] = dict() if power_config is None else power_config
-        self.temp_name: Optional[str] = temp_name
-        self.temp_config: Dict[str, Any] = dict() if temp_config is None else temp_config
+        self.cooler_id: str = cooler_id  # TODO quitar esto
+        self.power_id: str = power_id
+        self.power_config: dict[str, Any] = dict() if power_config is None else power_config
 
 
-class EdgeDataCenterConfig:
-    def __init__(self, edc_id: str, edc_location: Tuple[float, ...], r_manager_config: ResourceManagerConfig,
-                 pus_config: Dict[str, ProcessingUnitConfig], cooler_config: Optional[CoolerConfig] = None,
-                 edc_trx: Optional[TransceiverConfig] = None, env_temp: float = 298):
+class RManagerConfig:
+    def __init__(self, mapping_id: str = 'ff', mapping_config: dict[str, Any] = None,
+                 standby: bool = False, edc_slicing: dict[str, int] = None, cool_down: float = 0):
         """
-        Edge Data Center Configuration.
-        :param edc_id: ID of the Edge Data Center.
-        :param edc_location: Location of the EDC (coordinates in meters).
-        :param r_manager_config: Default resource manager configuration.
-        :param pus_config: configuration of PUs that compose the EDC.
-        :param cooler_config: configuration of cooling infrastructure of EDC.
-        :param edc_trx: Crosshaul transceiver configuration.
-        :param env_temp: Environment temperature of the EDC.
+        Edge Data Center resource manager configuration.
+        :param mapping_id: request mapping function ID. By default, it uses the "First Fit" algorithm.
+        :param mapping_config: Configuration parameters for the mapping function.
+        :param standby: Hot standby strategy function ID.
+        :param edc_slicing: EDC resource slicing per service. By default, no slicing is enforced.
+        :param cool_down: Hot standby cool-down period (i.e., minimum amount of time between hot standby explorations).
+                          By default, it is set to 0 (i.e., no cool-down period).
         """
-        self.edc_id: str = edc_id
-        self.edc_location: Tuple[float, ...] = edc_location
-        self.r_manager_config: ResourceManagerConfig = r_manager_config
-        self.pus_config: Dict[str, ProcessingUnitConfig] = pus_config
-        self.cooler_config: Optional[CoolerConfig] = cooler_config
-        self.crosshaul_node = NodeConfig(self.edc_id, edc_trx, node_mobility_config={'initial_val': edc_location})
-        self.env_temp = env_temp
+        self.mapping_id: str = mapping_id
+        self.mapping_config: dict[str, Any] = dict() if mapping_config is None else mapping_config
+        self.standby: bool = standby
+        edc_slicing = dict() if edc_slicing is None else edc_slicing
+        self.edc_slicing: dict[str, int] = edc_slicing
+        self.cool_down: float = cool_down
 
 
-class EdgeFederationControllerConfig:
-    def __init__(self, demand_share_name: str = 'equal', demand_share_config: Optional[Dict[str, Any]] = None,
-                 dyn_dispatching_name: Optional[str] = None, dyn_dispatching_config: Optional[Dict[str, Any]] = None,
-                 dyn_hot_standby_name: Optional[str] = None, dyn_hot_standby_config: Optional[Dict[str, Any]] = None,
-                 dyn_slicing_name: Optional[str] = None, dyn_slicing_config: Optional[Dict[str, Any]] = None,
-                 cool_down: float = 0):
+class SrvEstimatorConfig:
+    def __init__(self, service_id: str, estimator_id: str, estimator_config: dict[str, Any] = None):
+        self.service_id: str = service_id
+        self.estimator_id: str = estimator_id
+        self.estimator_config: dict[str, Any] = dict() if estimator_config is None else estimator_config
+
+
+class EDCDynOperationConfig:
+    def __init__(self, mapping_id: str = None, mapping_config: dict[str, Any] = None,
+                 slicing_id: str = None, slicing_config: dict[str, Any] = None,
+                 srv_estimators_config: dict[str, dict[str, Any]] = None, cool_down: float = 0):
         """
         Edge Data Centers controller configuration parameters.
-        :param demand_share_name: name of the demand share algorithm (i.e., how demand is distributed among EDCs).
-                                  By default, the EDC controller estimates that all the EDCs will face the same demand.
-        :param demand_share_config: any additional configuration parameter regarding EDC demand share estimation.
-        :param dyn_dispatching_name: name of the dynamic dispatching function assignation algorithm.
-                                     By default, dynamic dispatching functions are disabled.
-        :param dyn_dispatching_config: any additional configuration parameter regarding dynamic dispatching.
-        :param dyn_hot_standby_name: name of the dynamic hot standby algorithm.
-                                     By default, dynamic hot standby is disabled.
-        :param dyn_hot_standby_config: any additional configuration parameter regarding dynamic hot standby functions.
-        :param dyn_slicing_name: name of the dynamic EDC slicing function. By default, dynamic slicing is disabled.
-        :param dyn_slicing_config: any additional configuration parameter regarding dynamic EDC slicing.
+        :param mapping_id: ID of the dynamic mapping function assignation algorithm.
+                           By default, dynamic mapping functions are disabled.
+        :param mapping_config: any additional configuration parameter regarding dynamic mapping.
+        :param slicing_id: ID of the dynamic EDC slicing function. By default, dynamic slicing is disabled.
+        :param slicing_config: any additional configuration parameter regarding dynamic EDC slicing.
+        :param srv_estimators_config: Configuration parameters for service estimators.
         :param cool_down: cool-down period (i.e., minimum amount of time between two EDC controller explorations).
                           By default, it is set to 0 (i.e., no cool-down period).
         """
-        self.demand_share_name = demand_share_name
-        self.demand_share_config = dict() if demand_share_config is None else demand_share_config
-        self.dyn_dispatching_name = dyn_dispatching_name
-        self.dyn_dispatching_config = dict() if dyn_dispatching_config is None else dyn_dispatching_config
-        self.dyn_hot_standby_name = dyn_hot_standby_name
-        self.dyn_hot_standby_config = dict() if dyn_hot_standby_config is None else dyn_hot_standby_config
-        self.dyn_slicing_name = dyn_slicing_name
-        self.dyn_slicing_config = dict() if dyn_slicing_config is None else dyn_slicing_config
-        self.cool_down = cool_down
+        if cool_down < 0:
+            raise ValueError(f'cool_down must be greater than or equal to0')
+        self.mapping_id: str | None = mapping_id
+        self.mapping_config = dict() if mapping_config is None else mapping_config
+        self.slicing_id: str | None = slicing_id
+        self.slicing_config = dict() if slicing_config is None else slicing_config
+        self.cool_down: float = cool_down
+        self.srv_estimators_config: dict[str, SrvEstimatorConfig] = dict()
+        if srv_estimators_config is not None:
+            for srv_id, estimator_data in srv_estimators_config.items():
+                self.srv_estimators_config[srv_id] = SrvEstimatorConfig(srv_id, **estimator_data)
+
+    @property
+    def required(self) -> bool:
+        return self.mapping_id is not None or self.slicing_id is not None
+
+
+class EdgeDataCenterConfig:
+    def __init__(self, edc_id: str, location: tuple[float, ...], r_mngr_config: RManagerConfig = None,
+                 cooler_config: CoolerConfig | None = None, edc_temp: float = 298, edc_trx: TransceiverConfig = None):
+        """
+        Edge data center configuration.
+        :param edc_id: ID of the Edge Data Center.
+        :param location: Location of the EDC (coordinates in meters).
+        :param r_mngr_config: Resource manager configuration.
+        :param cooler_config: configuration of cooling infrastructure of EDC.
+        :param edc_temp: temperature (in Kelvin) of the EDC.
+        :param edc_trx: EDC transceiver configuration.
+        """
+        self.edc_id: str = edc_id
+        self.location: tuple[float, ...] = location
+        self.r_mngr_config: RManagerConfig = RManagerConfig() if r_mngr_config is None else r_mngr_config
+        self.pu_configs: dict[str, ProcessingUnitConfig] = dict()
+        self.edc_temp: float = edc_temp
+        self.cooler_config: CoolerConfig = CoolerConfig("default") if cooler_config is None else cooler_config
+        self.dyn_config: EDCDynOperationConfig | None = None
+        self.sg_config: ConsumerConfig | None = None
+        self.xh_node: StaticNodeConfig = StaticNodeConfig(self.edc_id, location, edc_trx)
+
+    def add_pu(self, pu_id: str, pu_config: ProcessingUnitConfig):
+        """
+        Adds a new processing unit to the edge data center.
+        :param pu_id: ID of the processing unit. Every PU in an EDC has a unique ID.
+        :param pu_config: Processing unit configuration
+        """
+        if pu_id in self.pu_configs:
+            raise ValueError(f'pu_id {pu_id} already defined in EDC {self.edc_id}')
+        self.pu_configs[pu_id] = pu_config
+
+    def add_dyn_config(self, dyn_manager_config: EDCDynOperationConfig):
+        """
+        Adds a dynamic configuration to the edge data center.
+        :param dyn_manager_config: edge data center dynamic operation configuration.
+        """
+        if self.dyn_config is not None:
+            raise ValueError(f'Dynamic operation for edge data center {self.edc_id} already defined')
+        self.dyn_config = dyn_manager_config
+
+    def add_sg_config(self, consumer_config: ConsumerConfig):
+        """
+        Adds smart grid consumer configuration to the edge data center.
+        :param consumer_config: smart grid consumer configuration.
+        """
+        if consumer_config.consumer_id != self.edc_id:
+            raise ValueError(f'Smart grid consumer ID {consumer_config.consumer_id} does not match EDC {self.edc_id}')
+        self.sg_config = consumer_config
 
 
 class EdgeFederationConfig:
-    def __init__(self, edcs: Dict[str, EdgeDataCenterConfig], congestion: float = 100,
-                 edc_slicing: Optional[Dict[str, Dict[str, float]]] = None,
-                 efc: Optional[EdgeFederationControllerConfig] = None):
+    def __init__(self, edge_fed_id: str = 'edge_fed', mapping_id: str = 'closest',
+                 mapping_config: dict[str, Any] = None, congestion: float = 1,
+                 srv_window_size: dict[str, float] = None, header: int = 0, content: int = 0):
         """
         Edge Federation configuration.
-        :param edcs: dictionary containing the configuration of each EDC that comprises the federation.
-        :param congestion: percentage of resources at which an EDC is considered congested. By default, it is 100%.
-        :param edc_slicing: EDC resources slicing per service. By default, no slicing is enforced.
-        :param efc: Configuration parameters of the EDCs controller.
-                                By default, the EDCs controller is disabled (i.e., no dynamic configuration of EDCs)
+        :param edge_fed_id: ID of the edge computing federation.
+        :param congestion: percentage of resources at which an EDC is considered congested. By default, it is 1.
+        :param header: size (in bits) of the header of app messages related to edge federation management.
+        :param content: size (in bits) of the content of app messages related to edge federation management.
         """
-        self.edcs: Dict[str, EdgeDataCenterConfig] = edcs
+        if 0 > congestion > 1:
+            raise ValueError(f'congestion ({congestion}) must be between 0 and 1')
+        if header < 0:
+            raise ValueError(f'header ({header}) must be greater than or equal to 0')
+        if content < 0:
+            raise ValueError(f'fed_mgmt_content ({content}) must be greater than or equal to 0')
+        self.edge_fed_id: str = edge_fed_id
+        self.mapping_id: str = mapping_id
+        self.mapping_config: dict[str, Any] = dict() if mapping_config is None else mapping_config
+        self.cloud_id: str | None = None
+        self.pus_config: dict[str, ProcessingUnitConfig] = dict()
+        self.coolers_config: dict[str, CoolerConfig] = dict()
+        self.r_managers_config: dict[str, RManagerConfig] = dict()
+        self.edcs_config: dict[str, EdgeDataCenterConfig] = dict()
         self.congestion: float = congestion
-        self.edc_slicing: Dict[str, Dict[str, float]] = dict() if edc_slicing is None else edc_slicing
-        self.efc: Optional[EdgeFederationControllerConfig] = efc
+        self.srv_profiling_windows: dict[str, float] = dict()
+        if srv_window_size is not None:
+            for srv_id, window_size in srv_window_size.items():
+                self.add_srv_profiling_window(srv_id, window_size)
+
+        PacketConfig.EDGE_FED_MGMT_HEADER = header
+        PacketConfig.EDGE_FED_MGMT_CONTENT = content
+
+    @property
+    def valid_config(self) -> bool:
+        return bool(self.edcs_config) or self.cloud_id is not None
+
+    def add_cloud(self, cloud_id: str):
+        self.cloud_id = cloud_id
+
+    def add_srv_profiling_window(self, service_id: str, window_size: float):
+        if not ServicesConfig.srv_defined(service_id):
+            raise ValueError(f'service {service_id} not defined')
+        if window_size < 0:
+            raise ValueError(f'window_size ({window_size}) must be greater than 0')
+        self.srv_profiling_windows[service_id] = window_size
+
+    def add_pu_config(self, pu_id: str, t_on: float = 0, t_off: float = 0, scheduling_id: str = 'fcfs',
+                      scheduling_config: dict[str, Any] = None, default_power_id: str = 'constant',
+                      default_power_config: dict[str, Any] = None, temp_id: str = 'constant',
+                      temp_config: dict[str, Any] = None, services: dict[str, dict[str, Any]] = None):
+        if pu_id in self.pus_config:
+            raise ValueError(f'Processing Unit {pu_id} already defined')
+        self.pus_config[pu_id] = ProcessingUnitConfig(pu_id, t_on, t_off, scheduling_id, scheduling_config,
+                                                      default_power_id, default_power_config, temp_id, temp_config)
+        if services is not None:
+            for srv_id, srv_config in services.items():
+                self.add_pu_service(pu_id, srv_id, **srv_config)
+
+    def add_pu_service(self, pu_id: str, service_id: str, max_parallel_tasks: int, proc_t_id: str = 'constant',
+                       proc_t_config: dict[str, Any] = None, pwr_id: str = 'constant', pwr_config: dict[str, Any] = None):
+        if pu_id not in self.pus_config:
+            raise ValueError(f'Processing Unit {pu_id} not defined')
+        self.pus_config[pu_id].add_service(service_id, max_parallel_tasks, proc_t_id, proc_t_config, pwr_id, pwr_config)
+
+    def add_cooler_config(self, cooler_id: str, power_id: str = 'constant', power_config: dict[str, Any] = None):
+        if cooler_id in self.coolers_config:
+            raise ValueError(f'Cooler {cooler_id} already defined')
+        self.coolers_config[cooler_id] = CoolerConfig(cooler_id, power_id, power_config)
+
+    def add_r_manager_config(self, r_manager_id: str, mapping_id: str = 'ff', mapping_config: dict[str, Any] = None,
+                             standby: bool = False, edc_slicing: dict[str, int] = None, cool_down: float = 0):
+        if r_manager_id in self.r_managers_config:
+            raise ValueError(f'Resource manager {r_manager_id} already defined')
+        self.r_managers_config[r_manager_id] = RManagerConfig(mapping_id, mapping_config, standby, edc_slicing, cool_down)
+
+    def add_edc_config(self, edc_id: str, location: tuple[float, ...], r_manager_id: str = None,
+                       cooler_id: str = None, edc_temp: float = 298, edc_trx: TransceiverConfig = None,
+                       pus: dict[str, str] | None = None, dyn_config: dict[str, Any] = None):
+        if edc_id in self.edcs_config:
+            raise ValueError(f'EDC {edc_id} already defined')
+        r_manager_config = None if r_manager_id is None else self.r_managers_config[r_manager_id]
+        cooler_config = None if cooler_id is None else self.coolers_config[cooler_id]
+        self.edcs_config[edc_id] = EdgeDataCenterConfig(edc_id, location, r_manager_config,
+                                                        cooler_config, edc_temp, edc_trx)
+        if pus is not None:
+            for pu_id, pu_type_id in pus.items():
+                self.add_edc_pu(edc_id, pu_id, pu_type_id)
+        if dyn_config is not None:
+            self.add_edc_dyn_config(edc_id, **dyn_config)
+
+    def add_edc_pu(self, edc_id: str, pu_id: str, pu_type_id: str):
+        if edc_id not in self.edcs_config:
+            raise ValueError(f'Edge data center {edc_id} not defined')
+        if pu_type_id not in self.pus_config:
+            raise ValueError(f'Processing unit {pu_type_id} not defined')
+        self.edcs_config[edc_id].add_pu(pu_id, self.pus_config[pu_type_id])
+
+    def add_edc_dyn_config(self, edc_id: str,  mapping_id: str = None, mapping_config: dict[str, Any] = None,
+                           slicing_id: str = None, slicing_config: dict[str, Any] = None,
+                           srv_estimators_config: dict[str, dict[str, Any]] = None, cool_down: float = 0):
+        if edc_id not in self.edcs_config:
+            raise ValueError(f'Edge data center {edc_id} not defined')
+        self.edcs_config[edc_id].add_dyn_config(EDCDynOperationConfig(mapping_id, mapping_config, slicing_id,
+                                                                      slicing_config, srv_estimators_config, cool_down))
+
+    def add_edc_sg_config(self, edc_id: str, consumer_config: ConsumerConfig):
+        if edc_id not in self.edcs_config:
+            raise ValueError(f'Edge data center {edc_id} not defined')
+        self.edcs_config[edc_id].add_sg_config(consumer_config)
+
+    def add_cloud_config(self, cloud_config: CloudConfig):
+        self.cloud_config = cloud_config
+

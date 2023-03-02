@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='mercury',
-    version=0.1,
+    version='0.2',
     description='Edge Computing Federation Modeling and Simulation Tool',
     author='Román Cárdenas Rodríguez',
     author_email='r.cardenas@upm.es',
@@ -10,85 +10,95 @@ setup(
         'Development Status :: 3 Alpha',
         'License :: OSI Approved :: Apache Software License 2.0 (Apache-2.0)',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
     ],
-    packages=find_packages(include=["mercury", "mercury.*"]),
+    packages=find_packages(exclude=["tests", "tests.*", "samples", "samples.*"]),
     install_requires=[
-        'matplotlib>=3.4.0',
-        'numpy>=1.19.0',
-        'pandas>=1.3.0',
-        'scikit-learn==0.22.1',
-        'xdevs>=2.2',
+        'matplotlib>=3.7',
+        'seaborn>=0.12',
+        'pandas>=1.5',
+        'scikit-learn>=1.2',
+        'numpy>=1.17.3',
+        'xdevs==2.2.1',
     ],
     entry_points={
-        'mercury.cnfs.sdn_strategy.plugins': [
-            'closest = mercury.plugin.cnfs.sdn_strategy:ClosestEDCStrategy',
-            'emptiest = mercury.plugin.cnfs.sdn_strategy:EmptiestEDCStrategy',
-            'fullest = mercury.plugin.cnfs.sdn_strategy:FullestEDCStrategy',
-            'emptiest_slice = mercury.plugin.cnfs.sdn_strategy:EmptiestEDCSliceStrategy',
-            'fullest_slice = mercury.plugin.cnfs.sdn_strategy:FullestEDCSliceStrategy',
-            'power_balance = mercury.plugin.cnfs.sdn_strategy:PowerBalanceConsumptionStrategy',
-            'highest_power = mercury.plugin.cnfs.sdn_strategy:HighestPowerConsumptionStrategy',
-            'electricity_offer = mercury.plugin.cnfs.sdn_strategy:BestElectricityOfferStrategy',
-            'smart_grid_closest = mercury.plugin.cnfs.sdn_strategy:SmartGridClosestEDCStrategy',
-            'smart_grid_emptiest = mercury.plugin.cnfs.sdn_strategy:SmartGridEmptiestEDCStrategy',
-            'smart_grid_fullest = mercury.plugin.cnfs.sdn_strategy:SmartGridFullestEDCStrategy',
-            'smart_grid_emptiest_slice = mercury.plugin.cnfs.sdn_strategy:SmartGridEmptiestEDCSliceStrategy',
-            'smart_grid_fullest_slice = mercury.plugin.cnfs.sdn_strategy:SmartGridFullestEDCSliceStrategy',
+        'mercury.cloud.network_delay.plugins': [
+            'constant = mercury.plugin.cloud.network_delay:ConstantCloudNetworkDelay',
+            'gaussian = mercury.plugin.cloud.network_delay:GaussianCloudNetworkDelay',
         ],
-        'mercury.cnfs.demand_estimation.plugins': [
-            'static = mercury.plugin.cnfs.demand_estimation:DemandEstimationGeneratorStatic',
-            'history = mercury.plugin.cnfs.demand_estimation:DemandEstimationGeneratorHistory',
+        'mercury.cloud.proc_t.plugins': [
+            'constant = mercury.plugin.cloud.proc_t:ConstantProcTimeModel',
+            'gaussian = mercury.plugin.cloud.proc_t:GaussianProcTimeModel',
         ],
-        'mercury.smart_grid.consumption_manager.plugins': [
-            'static = mercury.plugin.smart_grid.consumption_manager:StaticConsumptionManager',
-            'min_max = mercury.plugin.smart_grid.consumption_manager:MinDischargeMaxChargeConsumptionManager',
+        'mercury.smart_grid.consumer_manager.plugins': [
+            'static = mercury.plugin.smart_grid.consumer_manager:StaticConsumerManager',
+            'min_max = mercury.plugin.smart_grid.consumer_manager:MinDischargeMaxChargeConsumerManager',
         ],
-        'mercury.smart_grid.energy_provider.plugins': [
-            'static = mercury.plugin.smart_grid.provider:EnergyProviderStatic',
-            'history = mercury.plugin.smart_grid.provider:EnergyProviderHistory',
+        'mercury.smart_grid.energy_cost.plugins': [
+            'constant = mercury.plugin.smart_grid.energy_cost:ConstantEnergyCostGenerator',
+            'history = mercury.plugin.smart_grid.energy_cost:HistoryEnergyCostGenerator',
         ],
-        'mercury.smart_grid.pwr_source.plugins': [
-            'static = mercury.plugin.smart_grid.pwr_source:PowerSourceStatic',
-            'history = mercury.plugin.smart_grid.pwr_source:PowerSourceHistory',
+        'mercury.smart_grid.pwr_generation.plugins': [
+            'constant = mercury.plugin.smart_grid.pwr_generation:ConstantPowerGeneration',
+            'history = mercury.plugin.smart_grid.pwr_generation:HistoryPowerGeneration',
         ],
-        'mercury.edc.demand_share.plugins': [
-            'equal = mercury.plugin.cnfs.efc.demand_share:EqualDemandShare',
-            'trend = mercury.plugin.cnfs.efc.demand_share:TrendDemandShare',
+        'mercury.smart_grid.optimization.plugins': [
+            'energy = mercury.plugin.smart_grid.cost_function:EnergyCostFunction',
         ],
-        'mercury.edc.dyn_mapping.plugins': [],  # TODO
-        'mercury.edc.dyn_hot_standby.plugins': [
-            'session = mercury.plugin.cnfs.efc.dyn_hot_standby:SessionDynamicHotStandby',
+        'mercury.edc.cooler.power.plugins': [
+            'constant = mercury.plugin.edc.cooler_power:ConstantCoolerPowerModel',
+            '2_phase_immersion = mercury.plugin.edc.cooler_power:TwoPhaseImmersionCoolerPowerModel',
         ],
-        'mercury.edc.dyn_slicing.plugins': [],  # TODO
-        'mercury.edc.mapping.plugins': [
-            'first_fit = mercury.plugin.edc.mapping:FirstFitMapping'
-            'emptiest_pu = mercury.plugin.edc.mapping:EmptiestProcessingUnit',
-            'fullest_pu = mercury.plugin.edc.mapping:FullestProcessingUnit',
-            'less_it_pwr = mercury.plugin.edc.mapping:LessITPowerIncrement',
+        'mercury.edc.dyn.demand.plugins': [
+            'constant = mercury.plugin.edc.dyn_demand:ConstantSrvDemandEstimator',
+            'history = mercury.plugin.edc.dyn_demand:HistorySrvDemandEstimator',
+            'hybrid = mercury.plugin.edc.dyn_demand:HybridSrvDemandEstimator',
         ],
-        'mercury.edc.hot_standby.plugins': [
-            'session = mercury.plugin.edc.hot_standby:SessionHotStandby',
-            'full = mercury.plugin.edc.hot_standby:FullHotStandby',
+        'mercury.edc.dyn.mapping.plugins': [],
+        'mercury.edc.dyn.slicing.plugins': [
+            'estimation = mercury.plugin.edc.dyn_slicing:EstimationSlicing',
         ],
-        'mercury.edc.scheduling.plugins': [
-            'round_robin = mercury.plugin.edc.scheduling:RoundRobinScheduler',
-            'fcfs = mercury.plugin.edc.scheduling:FirstComeFirstServed',
-            'sjf = mercury.plugin.edc.scheduling:ShortestJobFirst',
-            'ljf = mercury.plugin.edc.scheduling:LongestJobFirst',
-            'srtf = mercury.plugin.edc.scheduling:ShortestRemainingTimeFirst',
-            'lrtf = mercury.plugin.edc.scheduling:LongestRemainingTimeFirst',
+        'mercury.edc.pu.mapping.plugins': [
+            'ff = mercury.plugin.edc.pu_mapping:FirstFit',
+            'epu = mercury.plugin.edc.pu_mapping:EmptiestProcessingUnit',
+            'fpu = mercury.plugin.edc.pu_mapping:FullestProcessingUnit',
+            'spt = mercury.plugin.edc.pu_mapping:ShortestProcessingTime',
+            'lpt = mercury.plugin.edc.pu_mapping:LongestProcessingTime',
+            'spi = mercury.plugin.edc.pu_mapping:SmallestPowerIncrement',
         ],
-        'mercury.edc.pu.pwr.plugins': [
-            'idle_active = mercury.plugin.edc.pu_pwr:IdleActivePowerModel',
-            'static_dyn = mercury.plugin.edc.pu_pwr:StaticDynamicPowerModel',
+        'mercury.edc.server.mapping.plugins': [
+            'closest = mercury.plugin.edc.server_mapping:ClosestEDCStrategy',
+            'emptiest = mercury.plugin.edc.server_mapping:EmptiestEDCStrategy',
+            'fullest = mercury.plugin.edc.server_mapping:FullestEDCStrategy',
+            'pw_balance = mercury.plugin.edc.server_mapping:PowerBalanceStrategy',
+            'highest_pw = mercury.plugin.edc.server_mapping:HighestPowerStrategy',
+            'sg_closest = mercury.plugin.edc.server_mapping:SmartGridClosestEDCStrategy',
+            'sg_emptiest = mercury.plugin.edc.server_mapping:SmartGridEmptiestEDCStrategy',
+            'sg_fullest = mercury.plugin.edc.server_mapping:SmartGridFullestEDCStrategy',
         ],
-        'mercury.edc.pu.temp.plugins': [],  # TODO
-        'mercury.edc.rack.cooler_pwr.plugins': [
-            'static = mercury.plugin.edc.cooler_pwr:StaticCoolerPowerModel',
-            '2_phase_immersion = mercury.plugin.edc.cooler_pwr:TwoPhaseImmersionCoolerPowerModel',
+        'mercury.edc.pu.proc_t.plugins': [
+            'constant = mercury.plugin.edc.pu_proc_t:ConstantProcTimeModel',
+            'round_robin = mercury.plugin.edc.pu_proc_t:RoundRobinProcTimeModel',
+            'gaussian = mercury.plugin.edc.pu_proc_t:GaussianProcTimeModel',
         ],
-        'mercury.edc.rack.cooler_temp.plugins': [],  # TODO
+        'mercury.edc.pu.power.plugins': [
+            'constant = mercury.plugin.edc.pu_power:ConstantPowerModel',
+            'idle_active = mercury.plugin.edc.pu_power:IdleActivePowerModel',
+            'linear = mercury.plugin.edc.pu_power:LinearPowerModel',
+            'static_dyn = mercury.plugin.edc.pu_power:StaticDynamicPowerModel',
+        ],
+        'mercury.edc.pu.scheduler.plugins': [
+            'fcfs = mercury.plugin.edc.pu_scheduler:FirstComeFirstServed',
+            'sjf = mercury.plugin.edc.pu_scheduler:ShortestJobFirst',
+            'ljf = mercury.plugin.edc.pu_scheduler:LongestJobFirst',
+            'srtf = mercury.plugin.edc.pu_scheduler:ShortestRemainingTimeFirst',
+            'lrtf = mercury.plugin.edc.pu_scheduler:LongestRemainingTimeFirst',
+            'edf = mercury.plugin.edc.pu_scheduler:EarliestDeadlineFirst',
+            'llf = mercury.plugin.edc.pu_scheduler:LeastLaxityFirst',
+        ],
+        'mercury.edc.pu.temperature.plugins': [
+            'constant = mercury.plugin.edc.pu_temperature:ConstantTemperatureModel',
+        ],
         'mercury.network.attenuation.plugins': [
             'fspl = mercury.plugin.network.attenuation:FreeSpacePathLossAttenuation',
             'fiber = mercury.plugin.network.attenuation:FiberLinkAttenuation',
@@ -101,29 +111,52 @@ setup(
             'thermal = mercury.plugin.network.noise:ThermalNoise',
         ],
         'mercury.mobility.plugins': [
-            'still = mercury.plugin.network.mobility:NodeMobilityStill',
+            'still = mercury.plugin.network.mobility:StillNodeMobility',
             '2D_function = mercury.plugin.network.mobility:NodeMobility2DFunction',
-            'history = mercury.plugin.network.mobility:NodeMobilityHistory',
+            'gradient = mercury.plugin.network.mobility:GradientNodeMobility',
+            'history = mercury.plugin.network.mobility:HistoryNodeMobility',
         ],
-        'mercury.service.request_profile.plugins': [
-            'periodic = mercury.plugin.service.request_profile:PeriodicRequestProfile',
-            'uniform = mercury.plugin.service.request_profile:UniformDistributionRequestProfile',
-            'gaussian = mercury.plugin.service.request_profile:GaussianDistributionRequestProfile',
-            'exponential = mercury.plugin.service.request_profile:ExponentialDistributionRequestProfile',
-            'lambda = mercury.plugin.service.request_profile:LambdaDrivenRequestProfile',
+        'mercury.client.client_generator.plugins': [
+            'list = mercury.plugin.client.client_generator:ListClientGenerator',
+            'synthetic = mercury.plugin.client.client_generator:SyntheticClientGenerator',
+            'history_wired = mercury.plugin.client.client_generator:HistoryWiredClientGenerator',
+            'history_wireless = mercury.plugin.client.client_generator:HistoryWirelessClientGenerator',
         ],
-        'mercury.service.session_profile.plugins': [
-            'periodic = mercury.plugin.service.session_profile:PeriodicSessionProfile',
-            'uniform = mercury.plugin.service.session_profile:UniformDistributionSessionProfile',
-            'gaussian = mercury.plugin.service.session_profile:GaussianDistributionSessionProfile',
-            'exponential = mercury.plugin.service.session_profile:ExponentialDistributionSessionProfile',
-            'lambda = mercury.plugin.service.session_profile:LambdaDrivenSessionProfile',
+        'mercury.client.srv_activity_generator.plugins': [
+            'single = mercury.plugin.client.activity_generator:SingleSrvActivityGenerator',
+            'periodic = mercury.plugin.client.activity_generator:PeriodicSrvActivityGenerator',
+            'uniform = mercury.plugin.client.activity_generator:UniformSrvActivityGenerator',
+            'gaussian = mercury.plugin.client.activity_generator:GaussianSrvActivityGenerator',
+            'exponential = mercury.plugin.client.activity_generator:ExponentialSrvActivityGenerator',
+            'lambda = mercury.plugin.client.activity_generator:LambdaSrvActivityGenerator',
         ],
-        'mercury.service.session_duration.plugins': [
-            'fixed = mercury.plugin.service.session_duration:FixedServiceSessionDuration',
-            'uniform = mercury.plugin.service.session_duration:UniformDistributionSessionDuration',
-            'gaussian = mercury.plugin.service.session_duration:GaussianDistributionSessionDuration',
-            'exponential = mercury.plugin.service.session_duration:ExponentialDistributionSessionDuration',
+        'mercury.client.srv_activity_window.plugins': [
+            'constant = mercury.plugin.client.activity_window:ConstantSrvWindowGenerator',
+            'uniform = mercury.plugin.client.activity_window:UniformSrvWindowGenerator',
+            'gaussian = mercury.plugin.client.activity_window:GaussianSrvWindowGenerator',
+            'exponential = mercury.plugin.client.activity_window:ExponentialSrvWindowGenerator',
+            'lambda = mercury.plugin.client.activity_window:LambdaSrvSessionDuration',
+        ],
+        'mercury.client.srv_req_generator.plugins': [
+            'single = mercury.plugin.client.req_generator:SingleSrvRequestGenerator',
+            'periodic = mercury.plugin.client.req_generator:PeriodicSrvRequestGenerator',
+            'uniform = mercury.plugin.client.req_generator:UniformSrvRequestGenerator',
+            'gaussian = mercury.plugin.client.req_generator:GaussianSrvRequestGenerator',
+            'exponential = mercury.plugin.client.req_generator:ExponentialSrvRequestGenerator',
+            'lambda = mercury.plugin.client.req_generator:LambdaSrvRequestGenerator',
+        ],
+        'mercury.optimization.cost_function.plugins': [
+            'deadlines = mercury.plugin.optimization.cost_function:DeadlinesCost',
+            'energy = mercury.plugin.optimization.cost_function:EnergyCost',
+        ],
+        'mercury.optimization.move_function.plugins': [
+            'charge_discharge = mercury.plugin.optimization.move_function:MoveChargeDischarge',
+            'n_pus = mercury.plugin.optimization.move_function:MoveProcessingUnits',
+        ],
+        'mercury.optimization.optimizer.plugins': [
+            'simulated_annealing = mercury.plugin.optimization.optimizer.simulated_annealing:SimulatedAnnealing',
+            'stc_hill_climbing = mercury.plugin.optimization.optimizer.stc_hill_climbing:StochasticHillClimbing',
+            'tabu_search = mercury.plugin.optimization.optimizer.tabu_search:TabuSearch',
         ],
     },
     project_urls={

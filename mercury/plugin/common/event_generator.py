@@ -1,9 +1,10 @@
+from __future__ import annotations
 import pandas as pd
 from abc import ABC, abstractmethod
 from math import inf
 from mercury.utils.history_buffer import EventHistoryBuffer
 from random import expovariate, gauss, uniform
-from typing import Callable, Generic, Optional, TypeVar
+from typing import Callable, Generic, TypeVar
 
 
 T = TypeVar('T')
@@ -11,17 +12,17 @@ T = TypeVar('T')
 
 class EventGenerator(ABC, Generic[T]):
     def __init__(self, **kwargs):
-        self.last_val: Optional[T] = kwargs.get('initial_val', None)
+        self.last_val: T | None = kwargs.get('initial_val', None)
         self.last_t: float = kwargs.get('t_start', 0)
         self.val_modifier: Callable[[T], T] = kwargs.get('val_modifier', lambda x: x)
-        self.next_val: Optional[T] = self.last_val
+        self.next_val: T | None = self.last_val
         self.next_t: float = self.last_t
 
     @property
     def ta(self) -> float:
         return self.next_t - self.last_t
 
-    def _compute_next_val(self) -> Optional[T]:
+    def _compute_next_val(self) -> T | None:
         return self.last_val
 
     @abstractmethod
@@ -103,7 +104,7 @@ class EventHistoryGenerator(EventGenerator[T], ABC, Generic[T]):
         self.history_buffer = EventHistoryBuffer(**kwargs)
         super().__init__(**kwargs, initial_val=self._pd_series_to_val(self.history_buffer.initial_val))
 
-    def _compute_next_val(self) -> Optional[T]:
+    def _compute_next_val(self) -> T | None:
         return self._pd_series_to_val(self.history_buffer.get_event())
 
     def _compute_next_ta(self) -> float:

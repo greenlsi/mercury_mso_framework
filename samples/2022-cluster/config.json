@@ -1,0 +1,290 @@
+{
+  "acc_config": {
+    "wireless_div_id": "equal",
+    "wireless_dl_link": {
+      "bandwidth": 100e6,
+      "carrier_freq": 33e9,
+      "att_id": "fspl",
+      "noise_id": "thermal"
+    },
+    "wireless_ul_link": {
+      "bandwidth": 100e6,
+      "carrier_freq": 33e9,
+      "att_id": "fspl",
+      "noise_id": "thermal"
+    }
+  },
+  "services": {
+    "adas": {
+      "cool_down": 1,
+      "t_deadline": 0.3,
+      "activity_gen_id": "periodic",
+      "activity_gen_config": {
+        "period": 20
+      },
+      "activity_window_id": "constant",
+      "activity_window_config": {
+        "length": 15
+      },
+      "req_gen_id": "periodic",
+      "req_gen_config": {
+        "period": 2
+      },
+      "sess_config": {
+        "t_deadline": 3,
+        "stream": true
+      }
+    }
+  },
+  "edge_fed_config": {
+    "mapping_id": "closest",
+    "mapping_config": {},
+    "parent_server_id": null,
+    "congestion": 1,
+    "srv_window_size": {
+      "adas": 25
+    }
+  },
+  "clients_config": {
+    "srv_max_guard": 0,
+    "client_generators": [
+      {
+        "generator_id": "history_wireless",
+        "services": ["adas"],
+        "generator_config": {
+          "lifetime_path": "../data_frisco/2008-06-06-harbor-lifetime.csv",
+          "lifetime_sep": ";",
+          "lifetime_client_id_column": "cab_id",
+          "t_init": 1212735600,
+          "t_start": 1212737219,
+          "t_end": 1212758406,
+          "max_n_clients": 20,
+          "mobility_path": "../data_frisco/2008-06-06-harbor-xy-traces.csv",
+          "mobility_sep": ";",
+          "mobility_client_id_column": "cab_id",
+          "mobility_time_column": "epoch"
+        }
+      }
+    ]
+  },
+  "edc_r_managers": {
+    "always_off": {
+      "standby": false
+    },
+    "always_on": {
+      "standby": true
+    }
+  },
+  "edc_pus": {
+    "pu": {
+      "t_on": 60,
+      "t_off": 10,
+      "pwr_config": {
+        "power": 88.278755
+      },
+      "services": {
+        "adas": {
+          "max_parallel_tasks": 5,
+          "proc_t_id": "constant",
+          "proc_t_config": {
+            "proc_t": 0.1
+          },
+          "pwr_id": "constant",
+          "pwr_config": {
+            "power": [88.278755, 97.26515, 105.19226, 107.77093, 109.11581, 110.41844]
+          }
+        }
+      }
+    }
+  },
+  "sg_providers": {
+    "iberdrola": {
+      "provider_type": "history",
+      "provider_config": {
+        "filepath": "../data_frisco/electricity_offer.csv"
+      }
+    }
+  },
+  "core": {
+    "location": [50, 50]
+  },
+  "gateways": {
+    "ap_0": {
+      "location": [400.66776, 2457.3906],
+      "wired": false
+    },
+    "ap_1": {
+      "location": [1651.354, 2265.2197],
+      "wired": false
+    },
+    "ap_2": {
+      "location": [240.71834, 1905.8291],
+      "wired": false
+    },
+    "ap_3": {
+      "location": [2123.7195, 277.2529],
+      "wired": false
+    },
+    "ap_4": {
+      "location": [1252.385, 255.89153],
+      "wired": false
+    },
+    "ap_5": {
+      "location": [376.31384, 215.27675],
+      "wired": false
+    },
+    "ap_6": {
+      "location": [1136.3301, 2838.9568],
+      "wired": false
+    },
+    "ap_7": {
+      "location": [1547.3496, 1235.5836],
+      "wired": false
+    },
+    "ap_8": {
+      "location": [270.25293, 1294.9988],
+      "wired": false
+    },
+    "ap_9": {
+      "location": [778.94867, 644.2152],
+      "wired": false
+    },
+    "ap_10": {
+      "location": [933.19446, 2039.176],
+      "wired": false
+    },
+    "ap_11": {
+      "location": [2228.3376, 1002.1537],
+      "wired": false
+    },
+    "ap_12": {
+      "location": [247.86665, 750.4141],
+      "wired": false
+    },
+    "ap_13": {
+      "location": [1680.2212, 681.2792],
+      "wired": false
+    },
+    "ap_14": {
+      "location": [853.69415, 1321.971],
+      "wired": false
+    },
+    "ap_15": {
+      "location": [1158.1157, 868.97284],
+      "wired": false
+    },
+    "ap_16": {
+      "location": [2077.063, 1571.9667],
+      "wired": false
+    },
+    "ap_17": {
+      "location": [1440.9855, 1730.6592],
+      "wired": false
+    },
+    "ap_18": {
+      "location": [364.82962, 2938.4407],
+      "wired": false
+    }        
+  },
+  "edcs": {
+    "edc_0": {
+      "location": [1931.3381, 953.6472],
+      "pus": {
+        "pu_1": "pu",
+        "pu_2": "pu",
+        "pu_3": "pu",
+        "pu_4": "pu",
+        "pu_5": "pu"
+      },
+      "r_manager_id": "always_off",
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 35e-6,
+          "min_discharge_cost": 36e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "iberdrola",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "../data_frisco/generation_edc_0.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 1000,
+          "initial_charge": 0,
+          "max_charge_rate": 200,
+          "max_discharge_rate": -200
+        }
+      }
+    },
+    "edc_1": {
+      "location": [881.1543, 2310.8103],
+      "pus": {
+        "pu_1": "pu",
+        "pu_2": "pu",
+        "pu_3": "pu",
+        "pu_4": "pu",
+        "pu_5": "pu"
+      },
+      "r_manager_id": "always_off",
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 35e-6,
+          "min_discharge_cost": 36e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "iberdrola",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "../data_frisco/generation_edc_1.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 1000,
+          "initial_charge": 0,
+          "max_charge_rate": 200,
+          "max_discharge_rate": -200
+        }
+      }
+    },
+    "edc_2": {
+      "location": [705.3681, 764.5343],
+      "pus": {
+        "pu_1": "pu",
+        "pu_2": "pu",
+        "pu_3": "pu",
+        "pu_4": "pu",
+        "pu_5": "pu"
+      },
+      "r_manager_id": "always_off",
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 35e-6,
+          "min_discharge_cost": 36e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "iberdrola",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "../data_frisco/generation_edc_2.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 1000,
+          "initial_charge": 0,
+          "max_charge_rate": 200,
+          "max_discharge_rate": -200
+        }
+      }
+    }    
+  }
+}

@@ -5,17 +5,9 @@ from typing import Dict, List, Optional, Tuple
 def integrate_col(df: pd.DataFrame, val_col: str, class_col: str = 'edc_id') -> Dict[str, float]:
     res: Dict[str, float] = dict()
     for class_id in df[class_col].unique():
-        val = 0
-        prev_t = 0
-        prev_val = 0
         sub_df = df[df[class_col] == class_id]
-        for _, row in sub_df.iterrows():
-            new_t = row['time']
-            new_val = row[val_col]
-            val += prev_val * (new_t - prev_t)
-            prev_t = new_t
-            prev_val = new_val
-        res[class_id] = val
+        aux = sub_df[['time', val_col]].shift(periods=1, fill_value=0)
+        res[class_id] = (aux['n_clients'].clip(upper=100) / 100 * (df['time'] - aux['time'])).sum()
     return res
 
 
@@ -92,7 +84,7 @@ def create_energy_report(consumers_path: str, offers_path: str, output_path: str
 
 
 def time_to_epoch(initial_epoch: int, input_path: str, output_path: str, sep: str = ','):
-    df = pd.read_csv(input_path, sep, index_col=None)
+    df = pd.read_csv(input_path, sep=sep, index_col=None)
     df['time'] = (df['time'] + initial_epoch).round().astype(int)
     df.rename(columns={'time': 'epoch'}, inplace=True)
     df.to_csv(output_path, sep, index=False)

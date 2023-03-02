@@ -1,0 +1,340 @@
+{
+  "services": {
+    "adas": {
+      "cool_down": 1,
+      "t_deadline": 1,
+      "header_size": 200,
+      "srv_req_size": 8e6,
+      "activity_gen_id": "periodic",
+      "activity_gen_config": {
+        "period": 20
+      },
+      "activity_window_id": "constant",
+      "activity_window_config": {
+        "length": 15
+      },
+      "req_gen_id": "periodic",
+      "req_gen_config": {
+        "period": 20
+      },
+      "sess_config": {
+        "t_deadline": 3,
+        "stream": true,
+        "close_res_size": 160e3
+      }
+    }
+  },
+  "clients_config": {
+    "srv_max_guard": 0,
+    "client_generators": [
+      {
+        "generator_id": "history_wireless",
+        "services": ["adas"],
+        "generator_config": {
+          "lifetime_path": "data/clients_lifetime.csv",
+          "lifetime_sep": ";",
+          "lifetime_client_id_column": "cab_id",
+          "t_init": 1212735600,
+          "t_start": 1212735600,
+          "t_end": 1212822000,
+          "mobility_path": "data/clients_location.csv",
+          "mobility_sep": ";",
+          "mobility_client_id_column": "cab_id",
+          "mobility_time_column": "epoch"
+        }
+      }
+    ]
+  },
+  "core": {
+    "location": [0, 0]
+  },
+  "gateways": {
+    "ap_0": {
+      "location": [400.66776, 2457.3906],
+      "wired": false
+    },
+    "ap_1": {
+      "location": [1651.354, 2265.2197],
+      "wired": false
+    },
+    "ap_2": {
+      "location": [240.71834, 1905.8291],
+      "wired": false
+    },
+    "ap_3": {
+      "location": [2123.7195, 277.2529],
+      "wired": false
+    },
+    "ap_4": {
+      "location": [1252.385, 255.89153],
+      "wired": false
+    },
+    "ap_5": {
+      "location": [376.31384, 215.27675],
+      "wired": false
+    },
+    "ap_6": {
+      "location": [1136.3301, 2838.9568],
+      "wired": false
+    },
+    "ap_7": {
+      "location": [1547.3496, 1235.5836],
+      "wired": false
+    },
+    "ap_8": {
+      "location": [270.25293, 1294.9988],
+      "wired": false
+    },
+    "ap_9": {
+      "location": [778.94867, 644.2152],
+      "wired": false
+    },
+    "ap_10": {
+      "location": [933.19446, 2039.176],
+      "wired": false
+    },
+    "ap_11": {
+      "location": [2228.3376, 1002.1537],
+      "wired": false
+    },
+    "ap_12": {
+      "location": [247.86665, 750.4141],
+      "wired": false
+    },
+    "ap_13": {
+      "location": [1680.2212, 681.2792],
+      "wired": false
+    },
+    "ap_14": {
+      "location": [853.69415, 1321.971],
+      "wired": false
+    },
+    "ap_15": {
+      "location": [1158.1157, 868.97284],
+      "wired": false
+    },
+    "ap_16": {
+      "location": [2077.063, 1571.9667],
+      "wired": false
+    },
+    "ap_17": {
+      "location": [1440.9855, 1730.6592],
+      "wired": false
+    },
+    "ap_18": {
+      "location": [364.82962, 2938.4407],
+      "wired": false
+    }        
+  },
+  "edge_fed_config": {
+    "mapping_id": "closest",
+    "mapping_config": {},
+    "congestion": 1,
+    "srv_window_size": {
+      "adas": 25
+    }
+  },
+  "edc_coolers": {
+    "two_phase": {
+      "power_id": "constant",
+      "power_config": {
+        "power": 15
+      }
+    }
+  },
+  "edc_pus": {
+    "pu": {
+      "t_on": 60,
+      "t_off": 10,
+      "pwr_config": {
+        "power": 88.278755
+      },
+      "services": {
+        "adas": {
+          "max_parallel_tasks": 5,
+          "proc_t_id": "constant",
+          "proc_t_config": {
+            "proc_t": 0.1
+          },
+          "pwr_id": "constant",
+          "pwr_config": {
+            "power": [88.278755, 97.26515, 105.19226, 107.77093, 109.11581, 110.41844]
+          }
+        }
+      }
+    }
+  },
+  "edc_r_managers": {
+    "always_off": {
+      "standby": false
+    }
+  },
+  "edcs": {
+    "edc_0": {
+      "location": [1931.3381, 953.6472],
+      "pus": {
+        "pu_1": "pu", "pu_2": "pu", "pu_3": "pu", "pu_4": "pu", "pu_5": "pu",
+        "pu_6": "pu", "pu_7": "pu", "pu_8": "pu", "pu_9": "pu", "pu_10": "pu",
+        "pu_11": "pu", "pu_12": "pu", "pu_13": "pu", "pu_14": "pu", "pu_15": "pu",
+        "pu_16": "pu", "pu_17": "pu", "pu_18": "pu", "pu_19": "pu", "pu_20": "pu"
+      },
+      "cooler_id": "two_phase",
+      "r_manager_id": "always_off",
+      "dyn_config": {
+        "slicing_id": "estimation",
+        "srv_estimators_config": {
+          "adas": {
+            "estimator_id": "hybrid",
+            "estimator_config": {
+              "filepath": "data/edc_0_demand_hourly.csv",
+              "t_column": "hour",
+              "margin": 0.2
+            }
+          }
+        },
+        "cool_down": 10
+      },
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 20e-6,
+          "min_discharge_cost": 35e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "provider",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "data/generation_edc_0.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 2280,
+          "initial_charge": 0,
+          "max_charge_rate": 1200,
+          "max_discharge_rate": -1200
+        }
+      }
+    },
+    "edc_1": {
+      "location": [881.1543, 2310.8103],
+      "pus": {
+        "pu_1": "pu", "pu_2": "pu", "pu_3": "pu", "pu_4": "pu", "pu_5": "pu",
+        "pu_6": "pu", "pu_7": "pu", "pu_8": "pu", "pu_9": "pu", "pu_10": "pu",
+        "pu_11": "pu", "pu_12": "pu", "pu_13": "pu", "pu_14": "pu", "pu_15": "pu",
+        "pu_16": "pu", "pu_17": "pu", "pu_18": "pu", "pu_19": "pu", "pu_20": "pu"
+      },
+      "cooler_id": "two_phase",
+      "r_manager_id": "always_off",
+      "dyn_config": {
+        "slicing_id": "estimation",
+        "srv_estimators_config": {
+          "adas": {
+            "estimator_id": "hybrid",
+            "estimator_config": {
+              "filepath": "data/edc_1_demand_hourly.csv",
+              "t_column": "hour",
+              "margin": 0.2
+            }
+          }
+        },
+        "cool_down": 10
+      },
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 20e-6,
+          "min_discharge_cost": 35e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "provider",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "data/generation_edc_1.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 2280,
+          "initial_charge": 0,
+          "max_charge_rate": 1200,
+          "max_discharge_rate": -1200
+        }
+      }
+    },
+    "edc_2": {
+      "location": [705.3681, 764.5343],
+      "pus": {
+        "pu_1": "pu", "pu_2": "pu", "pu_3": "pu", "pu_4": "pu", "pu_5": "pu",
+        "pu_6": "pu", "pu_7": "pu", "pu_8": "pu", "pu_9": "pu", "pu_10": "pu",
+        "pu_11": "pu", "pu_12": "pu", "pu_13": "pu", "pu_14": "pu", "pu_15": "pu",
+        "pu_16": "pu", "pu_17": "pu", "pu_18": "pu", "pu_19": "pu", "pu_20": "pu"
+      },
+      "cooler_id": "two_phase",
+      "r_manager_id": "always_off",
+      "dyn_config": {
+        "slicing_id": "estimation",
+        "srv_estimators_config": {
+          "adas": {
+            "estimator_id": "hybrid",
+            "estimator_config": {
+              "filepath": "data/edc_2_demand_hourly.csv",
+              "t_column": "hour",
+              "margin": 0.2
+            }
+          }
+        },
+        "cool_down": 10
+      },
+      "sg_config": {
+        "manager_config": {
+          "max_charge_cost": 20e-6,
+          "min_discharge_cost": 35e-6
+        },
+        "manager_id": "min_max",
+        "provider_id": "provider",
+        "sources": {
+          "solar": {
+            "gen_config": {
+              "filepath": "data/generation_edc_2.csv"
+            },
+            "gen_id": "history"
+          }
+        },
+        "storage_config": {
+          "capacity": 2280,
+          "initial_charge": 0,
+          "max_charge_rate": 1200,
+          "max_discharge_rate": -1200
+        }
+      }
+    }
+  },
+  "cloud_config": {
+    "cloud_id": "cloud",
+    "delay_id": "constant",
+    "delay_config": {
+      "prop_delay": 0.08,
+      "bit_rate": 600e6
+    },
+    "srv_configs": {
+      "adas": {
+        "profiling_window": 25,
+        "proc_t_id": "constant",
+        "proc_t_config": {
+          "proc_t": 0.1
+        }
+      }
+    }
+  },
+  "sg_providers": {
+    "provider": {
+      "provider_config": {
+        "filepath": "data/electricity_offer_sim.csv"
+      },
+      "provider_type": "history"
+    }
+  }
+}

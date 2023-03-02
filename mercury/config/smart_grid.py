@@ -1,28 +1,29 @@
-from typing import Any, Dict, Optional
+from __future__ import annotations
+from typing import Any
 
 
 class EnergyProviderConfig:
-    def __init__(self, provider_id: str, provider_type: str, provider_config: Optional[Dict[str, Any]] = None):
+    def __init__(self, provider_id: str, cost_id: str, cost_config: dict[str, Any] = None):
         """
         Energy provider configuration parameters.
         :param provider_id: ID of the energy provider.
-        :param provider_type: type of energy provider model.
-        :param provider_config: any additional configuration parameter for the energy provider model.
+        :param cost_id: ID of the energy cost generator model.
+        :param cost_config: any additional configuration parameter for the energy cost generator model.
         """
         self.provider_id: str = provider_id
-        self.provider_type: str = provider_type
-        self.provider_config: Dict[str, Any] = dict() if provider_config is None else provider_config
+        self.cost_id: str = cost_id
+        self.cost_config: dict[str, Any] = dict() if cost_config is None else cost_config
 
 
-class PowerSourceConfig:
-    def __init__(self, source_type: str, source_config: Optional[Dict[str, Any]] = None):
+class PowerGeneratorConfig:
+    def __init__(self, gen_id: str, gen_config: dict[str, Any] = None):
         """
         Power source configuration parameters.
-        :param source_type: type of the power source model.
-        :param source_config: any additional configuration parameter for the power source model.
+        :param gen_id: ID of the power generator model.
+        :param gen_config: any additional configuration parameter for the power generator model.
         """
-        self.source_type: str = source_type
-        self.source_config: Dict[str, Any] = dict() if source_config is None else source_config
+        self.gen_id: str = gen_id
+        self.gen_config: dict[str, Any] = dict() if gen_config is None else gen_config
 
 
 class EnergyStorageConfig:
@@ -50,35 +51,42 @@ class EnergyStorageConfig:
 
 
 class ConsumerConfig:
-    def __init__(self, consumer_id: str, provider_id: str, storage_config: Optional[EnergyStorageConfig] = None,
-                 consumption_manager_name: str = 'static', consumption_manager_config: Optional[Dict[str, Any]] = None,
-                 sources_config: Optional[Dict[str, PowerSourceConfig]] = None):
+    def __init__(self, consumer_id: str, provider_id: str, storage_config: EnergyStorageConfig | None = None,
+                 manager_id: str = 'static', manager_config: dict[str, Any] | None = None,
+                 sources_config: dict[str, PowerGeneratorConfig] | None = None):
         """
         Smart Grid consumer configuration parameters.
         :param consumer_id: ID of the smart grid consumer.
         :param provider_id: ID of the energy provider that offers electricity to the smart grid consumer.
         :param storage_config: storage configuration of the consumer. By default, the consumer has no storage unit.
-        :param consumption_manager_name: name of the consumption manager model.
-                                         By default, it is set to static (i.e., it doesn't change during the simulation)
-        :param consumption_manager_config: Any additional configuration parameter for the consumption manager model.
+        :param manager_id: ID of the consumption manager model. By default, it is set to static (i.e., no change)
+        :param manager_config: Any additional configuration parameter for the consumption manager model.
         :param sources_config: Dictionary containing the configuration of all the power sources of the consumer.
-                               By default, a consumer doesn't have any power source.
         """
         self.consumer_id: str = consumer_id
         self.provider_id: str = provider_id
         self.storage_config: EnergyStorageConfig = EnergyStorageConfig() if storage_config is None else storage_config
-        self.consumption_manager_name: str = consumption_manager_name
-        self.consumption_manager_config: Dict[str, Any] = dict() if consumption_manager_config is None \
-            else consumption_manager_config
-        self.sources_config: Dict[str, PowerSourceConfig] = dict() if sources_config is None else sources_config
+        self.manager_id: str = manager_id
+        self.manager_config: dict[str, Any] = dict() if manager_config is None else manager_config
+        self.sources_config: dict[str, PowerGeneratorConfig] = dict() if sources_config is None else sources_config
 
 
 class SmartGridConfig:
-    def __init__(self, providers_config: Dict[str, EnergyProviderConfig], consumers_config: Dict[str, ConsumerConfig]):
-        """
-        Smart Grid configuration parameters.
-        :param providers_config: dictionary with the configuration of all the energy providers
-        :param consumers_config: dictionary with the configuration of all the smart grid consumers.
-        """
-        self.providers_config: Dict[str, EnergyProviderConfig] = providers_config
-        self.consumers_config: Dict[str, ConsumerConfig] = consumers_config
+    def __init__(self):
+        """Smart Grid configuration parameters."""
+        self.providers_config: dict[str, EnergyProviderConfig] = dict()
+        self.consumers_config: dict[str, ConsumerConfig] = dict()
+
+    def add_provider(self, provider_id: str, provider_type: str, provider_config: dict[str, Any] | None = None):
+        self.providers_config[provider_id] = EnergyProviderConfig(provider_id, provider_type, provider_config)
+
+    def add_consumer(self, consumer_id: str, provider_id: str, storage_config: EnergyStorageConfig | None = None,
+                     manager_id: str = 'static', manager_config: dict[str, Any] | None = None,
+                     sources: dict[str, PowerGeneratorConfig] | None = None) -> ConsumerConfig:
+        if consumer_id in self.consumers_config:
+            raise ValueError(f'Smart grid consumer {consumer_id} already defined')
+        if provider_id not in self.providers_config:
+            raise ValueError(f'Smart grid energy provider {provider_id} not defined')
+        consumer_config = ConsumerConfig(consumer_id, provider_id, storage_config, manager_id, manager_config, sources)
+        self.consumers_config[consumer_id] = consumer_config
+        return consumer_config

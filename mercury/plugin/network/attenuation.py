@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from math import pow
+from mercury.utils.link import Link
 from mercury.utils.maths import from_db_to_natural
 from scipy.constants import c, pi
 
@@ -9,7 +10,7 @@ class Attenuation(ABC):
         pass
 
     @abstractmethod
-    def attenuation(self, link, distance: float) -> float:
+    def attenuation(self, link: Link, distance: float) -> float:
         """
         Returns attenuation (in W/W) depending on a given distance
         :param link: Link that causes the attenuation
@@ -19,8 +20,8 @@ class Attenuation(ABC):
 
 class FreeSpacePathLossAttenuation(Attenuation):
     """ Model of power attenuation in free space """
-    def attenuation(self, link, distance: float) -> float:
-        frequency = link.frequency
+    def attenuation(self, link: Link, distance: float) -> float:
+        frequency = link.link_freq
         return 1 if distance == 0 or frequency == 0 else pow((4 * pi * distance * frequency / c), 2)
 
 
@@ -37,6 +38,6 @@ class FiberLinkAttenuation(Attenuation):
         self.splice_loss = kwargs.get('splice_loss', 0)
         self.n_splices = kwargs.get('n_splices', 0)
 
-    def attenuation(self, link, distance: float) -> float:
-        loss_db = self.loss_factor * distance + self.splice_loss * self.n_splices
+    def attenuation(self, link: Link, distance: float) -> float:
+        loss_db = self.loss_factor * distance / 1000 + self.splice_loss * self.n_splices
         return from_db_to_natural(loss_db)

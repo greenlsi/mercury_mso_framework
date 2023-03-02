@@ -1,12 +1,11 @@
 import pkg_resources
 from typing import Dict, Generic, Type, TypeVar
-from .cnfs import SDNStrategy, DemandEstimationGenerator
-from .cnfs.efc import DemandShare, DynamicSlicing, DynamicMapping, DynamicHotStandby
-from .edc import MappingStrategy, HotStandbyStrategy, SchedulingAlgorithm, ProcessingUnitPowerModel, \
-    ProcessingUnitTemperatureModel, EdgeDataCenterCoolerPowerModel, EdgeDataCenterCoolerTemperatureModel
+from .client import ClientGenerator, SrvRequestGenerator, SrvActivityGenerator, SrvActivityWindowGenerator
+from .cloud import CloudNetworkDelay, CloudProcTimeModel
+from .edc import *
 from .network import Attenuation, ChannelDivision, NodeMobility, Noise
-from .service import ServiceRequestProfile, ServiceSessionProfile, ServiceSessionDuration
-from .smart_grid import EnergyProvider, PowerSource, ConsumptionManager
+from .smart_grid import EnergyCostGenerator, PowerGenerationGenerator, ConsumerManager
+from .optimization import CostFunction, MoveFunction, Optimizer
 
 
 T = TypeVar('T')
@@ -26,7 +25,7 @@ class Factory(Generic[T]):
 
     def create(self, key: str, **kwargs) -> T:
         if not self.defined(key):
-            raise ValueError('Model name "{}" not defined'.format(key))
+            raise ValueError(f'Model name "{key}" not defined')
         return self._entities[key](**kwargs)
 
     @staticmethod
@@ -36,135 +35,130 @@ class Factory(Generic[T]):
             try:
                 res[ep.name] = ep.load(require=True)
             except pkg_resources.UnknownExtra as ue:
-                print("Plugin %r dependencies resolution failed: %s" % (ep, ue))
+                raise ValueError(f'Plugin {ep} dependencies resolution failed: {ue}')
         return res
 
 
 class AbstractFactory:
-
     base_plugins = {
-        'cnf_sdn': 'mercury.cnfs.sdn_strategy.plugins',
-        'cnf_demand': 'mercury.cnfs.demand_estimation.plugins',
-        'smart_grid_provider': 'mercury.smart_grid.energy_provider.plugins',
-        'smart_grid_manager': 'mercury.smart_grid.consumers_manager.plugins',
-        'smart_grid_consumption_manager': 'mercury.smart_grid.consumption_manager.plugins',
-        'smart_grid_source': 'mercury.smart_grid.pwr_source.plugins',
-        'edc_demand_share': 'mercury.edc.demand_share.plugins',
-        'edc_dyn_mapping': 'mercury.edc.dyn_mapping.plugins',
-        'edc_dyn_hot_standby': 'mercury.edc.dyn_hot_standby.plugins',
-        'edc_dyn_slicing': 'mercury.edc.dyn_slicing.plugins',
-        'edc_mapping': 'mercury.edc.mapping.plugins',
+        'sg_energy_cost': 'mercury.smart_grid.energy_cost.plugins',
+        'sg_consumer_manager': 'mercury.smart_grid.consumer_manager.plugins',
+        'sg_pwr_generation': 'mercury.smart_grid.pwr_generation.plugins',
+        'cloud_network_delay': 'mercury.cloud.network_delay.plugins',
+        'cloud_proc_t': 'mercury.cloud.proc_t.plugins',
+        'edc_cooler_pwr': 'mercury.edc.cooler.power.plugins',
+        'edc_dyn_demand': 'mercury.edc.dyn.demand.plugins',
+        'edc_dyn_mapping': 'mercury.edc.dyn.mapping.plugins',
+        'edc_dyn_slicing': 'mercury.edc.dyn.slicing.plugins',
+        'edc_dyn_standby': 'mercury.edc.dyn.standby.plugins',
+        'edc_pu_proc_t': 'mercury.edc.pu.proc_t.plugins',
+        'edc_pu_pwr': 'mercury.edc.pu.power.plugins',
+        'edc_pu_temp': 'mercury.edc.pu.temperature.plugins',
+        'edc_pu_scheduler': 'mercury.edc.pu.scheduler.plugins',
+        'edc_pu_mapping': 'mercury.edc.pu.mapping.plugins',
+        'edc_server_mapping': 'mercury.edc.server.mapping.plugins',
         'edc_hot_standby': 'mercury.edc.hot_standby.plugins',
-        'edc_scheduling': 'mercury.edc.scheduling.plugins',
-        'edc_pu_pwr': 'mercury.edc.pu.pwr.plugins',
-        'edc_pu_temp': 'mercury.edc.pu.temp.plugins',
-        'edc_cooler_pwr': 'mercury.edc.rack.cooler_pwr.plugins',
-        'edc_cooler_temp': 'mercury.edc.rack.cooler_temp.plugins',
         'network_attenuation': 'mercury.network.attenuation.plugins',
         'network_noise': 'mercury.network.noise.plugins',
         'network_channel_division': 'mercury.network.channel_division.plugins',
         'mobility': 'mercury.mobility.plugins',
-        'srv_request_profile': 'mercury.service.request_profile.plugins',
-        'srv_session_profile': 'mercury.service.session_profile.plugins',
-        'srv_session_duration': 'mercury.service.session_duration.plugins',
+        'client_generator': 'mercury.client.client_generator.plugins',
+        'srv_activity_generator': 'mercury.client.srv_activity_generator.plugins',
+        'srv_activity_window': 'mercury.client.srv_activity_window.plugins',
+        'srv_req_generator': 'mercury.client.srv_req_generator.plugins',
+        'cost_function': 'mercury.optimization.cost_function.plugins',
+        'move_function': 'mercury.optimization.move_function.plugins',
+        'optimizer': 'mercury.optimization.optimizer.plugins',
     }
     factories: Dict[str, Factory] = {key: Factory(entry_point) for key, entry_point in base_plugins.items()}
 
     @staticmethod
-    def register_sdn_strategy(key: str, model: Type[SDNStrategy]):
-        AbstractFactory.factories['cnf_sdn'].register(key, model)
+    def register_sg_energy_cost(key: str, model: Type[EnergyCostGenerator]):
+        AbstractFactory.factories['sg_energy_cost'].register(key, model)
 
     @staticmethod
-    def create_sdn_strategy(key: str, **kwargs) -> SDNStrategy:
-        return AbstractFactory.factories['cnf_sdn'].create(key, **kwargs)
+    def create_sg_energy_cost(key: str, **kwargs) -> EnergyCostGenerator:
+        return AbstractFactory.factories['sg_energy_cost'].create(key, **kwargs)
 
     @staticmethod
-    def register_demand_estimator(key: str, model: Type[DemandEstimationGenerator]):
-        AbstractFactory.factories['cnf_demand'].register(key, model)
+    def register_sg_consumer_manager(key: str, model: Type[ConsumerManager]):
+        AbstractFactory.factories['sg_consumer_manager'].register(key, model)
 
     @staticmethod
-    def create_demand_estimator(key: str, **kwargs) -> DemandEstimationGenerator:
-        return AbstractFactory.factories['cnf_demand'].create(key, **kwargs)
+    def create_sg_consumer_manager(key: str, **kwargs) -> ConsumerManager:
+        return AbstractFactory.factories['sg_consumer_manager'].create(key, **kwargs)
 
     @staticmethod
-    def register_smart_grid_provider(key: str, model: Type[EnergyProvider]):
-        AbstractFactory.factories['smart_grid_provider'].register(key, model)
+    def register_sg_pwr_generation(key: str, model: Type[PowerGenerationGenerator]):
+        AbstractFactory.factories['sg_pwr_generation'].register(key, model)
 
     @staticmethod
-    def create_smart_grid_provider(key: str, **kwargs) -> EnergyProvider:
-        return AbstractFactory.factories['smart_grid_provider'].create(key, **kwargs)
+    def create_sg_pwr_generation(key: str, **kwargs) -> PowerGenerationGenerator:
+        return AbstractFactory.factories['sg_pwr_generation'].create(key, **kwargs)
 
     @staticmethod
-    def register_smart_grid_consumption_manager(key: str, model: Type[ConsumptionManager]):
-        AbstractFactory.factories['smart_grid_consumption_manager'].register(key, model)
+    def register_cloud_net_delay(key: str, model: Type[CloudNetworkDelay]):
+        AbstractFactory.factories['cloud_network_delay'].register(key, model)
 
     @staticmethod
-    def create_smart_grid_consumption_manager(key: str, **kwargs) -> ConsumptionManager:
-        return AbstractFactory.factories['smart_grid_consumption_manager'].create(key, **kwargs)
+    def create_cloud_net_delay(key: str, **kwargs) -> CloudNetworkDelay:
+        return AbstractFactory.factories['cloud_network_delay'].create(key, **kwargs)
 
     @staticmethod
-    def register_smart_grid_source(key: str, model: Type[PowerSource]):
-        AbstractFactory.factories['smart_grid_source'].register(key, model)
+    def register_cloud_proc_t(key: str, model: Type[CloudProcTimeModel]):
+        AbstractFactory.factories['cloud_proc_t'].register(key, model)
 
     @staticmethod
-    def create_smart_grid_source(key: str, **kwargs) -> PowerSource:
-        return AbstractFactory.factories['smart_grid_source'].create(key, **kwargs)
+    def create_cloud_proc_t(key: str, **kwargs) -> CloudProcTimeModel:
+        return AbstractFactory.factories['cloud_proc_t'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_demand_share(key: str, model: Type[DemandShare]):
-        AbstractFactory.factories['edc_demand_share'].register(key, model)
+    def register_demand_estimation(key: str, model: Type[SrvDemandEstimator]):
+        AbstractFactory.factories['edc_dyn_demand'].register(key, model)
 
     @staticmethod
-    def create_edc_demand_share(key: str, **kwargs) -> DemandShare:
-        return AbstractFactory.factories['edc_demand_share'].create(key, **kwargs)
+    def create_demand_estimation(key: str, **kwargs) -> SrvDemandEstimator:
+        return AbstractFactory.factories['edc_dyn_demand'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_dyn_dispatching(key: str, model: Type[DynamicMapping]):
-        AbstractFactory.factories['edc_dyn_dispatching'].register(key, model)
+    def register_edc_dyn_mapping(key: str, model: Type[DynamicEDCMapping]):
+        AbstractFactory.factories['edc_dyn_mapping'].register(key, model)
 
     @staticmethod
-    def create_edc_dyn_dispatching(key: str, **kwargs) -> DynamicMapping:
-        return AbstractFactory.factories['edc_dyn_dispatching'].create(key, **kwargs)
+    def create_edc_dyn_mapping(key: str, **kwargs) -> DynamicEDCMapping:
+        return AbstractFactory.factories['edc_dyn_mapping'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_dyn_hot_standby(key: str, model: Type[DynamicHotStandby]):
-        AbstractFactory.factories['edc_dyn_hot_standby'].register(key, model)
-
-    @staticmethod
-    def create_edc_dyn_hot_standby(key: str, **kwargs) -> DynamicHotStandby:
-        return AbstractFactory.factories['edc_dyn_hot_standby'].create(key, **kwargs)
-
-    @staticmethod
-    def register_edc_dyn_slicing(key: str, model: Type[DynamicSlicing]):
+    def register_edc_dyn_slicing(key: str, model: Type[DynamicEDCSlicing]):
         AbstractFactory.factories['edc_dyn_slicing'].register(key, model)
 
     @staticmethod
-    def create_edc_dyn_slicing(key: str, **kwargs) -> DynamicSlicing:
+    def create_edc_dyn_slicing(key: str, **kwargs) -> DynamicEDCSlicing:
         return AbstractFactory.factories['edc_dyn_slicing'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_mapping(key: str, model: Type[MappingStrategy]):
-        AbstractFactory.factories['edc_mapping'].register(key, model)
+    def register_edc_server_mapping(key: str, model: Type[ServerMappingStrategy]):
+        AbstractFactory.factories['edc_server_mapping'].register(key, model)
 
     @staticmethod
-    def create_edc_mapping(key: str, **kwargs) -> MappingStrategy:
-        return AbstractFactory.factories['edc_mapping'].create(key, **kwargs)
+    def create_edc_server_mapping(key: str, **kwargs) -> ServerMappingStrategy:
+        return AbstractFactory.factories['edc_server_mapping'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_hot_standby(key: str, model: Type[HotStandbyStrategy]):
-        AbstractFactory.factories['edc_hot_standby'].register(key, model)
+    def register_edc_pu_mapping(key: str, model: Type[PUMappingStrategy]):
+        AbstractFactory.factories['edc_pu_mapping'].register(key, model)
 
     @staticmethod
-    def create_edc_hot_standby(key: str, **kwargs) -> HotStandbyStrategy:
-        return AbstractFactory.factories['edc_hot_standby'].create(key, **kwargs)
+    def create_edc_pu_mapping(key: str, **kwargs) -> PUMappingStrategy:
+        return AbstractFactory.factories['edc_pu_mapping'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_scheduling_algorithm(key: str, model: Type[SchedulingAlgorithm]):
-        AbstractFactory.factories['edc_scheduling'].register(key, model)
+    def register_edc_pu_scheduler(key: str, model: Type[ProcessingUnitScheduler]):
+        AbstractFactory.factories['edc_pu_scheduler'].register(key, model)
 
     @staticmethod
-    def create_scheduling_algorithm(key: str, **kwargs) -> SchedulingAlgorithm:
-        return AbstractFactory.factories['edc_scheduling'].create(key, **kwargs)
+    def create_edc_pu_scheduler(key: str, **kwargs) -> ProcessingUnitScheduler:
+        return AbstractFactory.factories['edc_pu_scheduler'].create(key, **kwargs)
 
     @staticmethod
     def register_edc_pu_pwr(key: str, model: Type[ProcessingUnitPowerModel]):
@@ -175,6 +169,14 @@ class AbstractFactory:
         return AbstractFactory.factories['edc_pu_pwr'].create(key, **kwargs)
 
     @staticmethod
+    def register_edc_pu_proc_t(key: str, model: Type[ProcessingUnitProcTimeModel]):
+        AbstractFactory.factories['edc_pu_proc_t'].register(key, model)
+
+    @staticmethod
+    def create_edc_pu_proc_t(key: str, **kwargs) -> ProcessingUnitProcTimeModel:
+        return AbstractFactory.factories['edc_pu_proc_t'].create(key, **kwargs)
+
+    @staticmethod
     def register_edc_pu_temp(key: str, model: Type[ProcessingUnitTemperatureModel]):
         AbstractFactory.factories['edc_pu_temp'].register(key, model)
 
@@ -183,20 +185,12 @@ class AbstractFactory:
         return AbstractFactory.factories['edc_pu_temp'].create(key, **kwargs)
 
     @staticmethod
-    def register_edc_cooler_pwr(key: str, model: Type[EdgeDataCenterCoolerPowerModel]):
+    def register_edc_cooler_pwr(key: str, model: Type[CoolerPowerModel]):
         AbstractFactory.factories['edc_cooler_pwr'].register(key, model)
 
     @staticmethod
-    def create_edc_cooler_pwr(key: str, **kwargs) -> EdgeDataCenterCoolerPowerModel:
+    def create_edc_cooler_pwr(key: str, **kwargs) -> CoolerPowerModel:
         return AbstractFactory.factories['edc_cooler_pwr'].create(key, **kwargs)
-
-    @staticmethod
-    def register_edc_cooler_temp(key: str, model: Type[EdgeDataCenterCoolerTemperatureModel]):
-        AbstractFactory.factories['edc_cooler_temp'].register(key, model)
-
-    @staticmethod
-    def create_edc_cooler_temp(key: str, **kwargs) -> EdgeDataCenterCoolerTemperatureModel:
-        return AbstractFactory.factories['edc_cooler_temp'].create(key, **kwargs)
 
     @staticmethod
     def register_network_attenuation(key: str, model: Type[Attenuation]):
@@ -231,25 +225,57 @@ class AbstractFactory:
         return AbstractFactory.factories['mobility'].create(key, **kwargs)
 
     @staticmethod
-    def register_srv_request_profile(key: str, model: Type[ServiceRequestProfile]):
-        AbstractFactory.factories['srv_request_profile'].register(key, model)
+    def register_client_generator(key: str, model: Type[ClientGenerator]):
+        AbstractFactory.factories['client_generator'].register(key, model)
 
     @staticmethod
-    def create_srv_request_profile(key: str, **kwargs) -> ServiceRequestProfile:
-        return AbstractFactory.factories['srv_request_profile'].create(key, **kwargs)
+    def create_client_generator(key: str, **kwargs) -> ClientGenerator:
+        return AbstractFactory.factories['client_generator'].create(key, **kwargs)
 
     @staticmethod
-    def register_srv_session_profile(key: str, model: Type[ServiceSessionProfile]):
-        AbstractFactory.factories['srv_session_profile'].register(key, model)
+    def register_srv_activity_generator(key: str, model: Type[SrvActivityGenerator]):
+        AbstractFactory.factories['srv_activity_generator'].register(key, model)
 
     @staticmethod
-    def create_srv_session_profile(key: str, **kwargs) -> ServiceSessionProfile:
-        return AbstractFactory.factories['srv_session_profile'].create(key, **kwargs)
+    def create_srv_activity_generator(key: str, **kwargs) -> SrvActivityGenerator:
+        return AbstractFactory.factories['srv_activity_generator'].create(key, **kwargs)
 
     @staticmethod
-    def register_srv_session_duration(key: str, model: Type[ServiceSessionDuration]):
-        AbstractFactory.factories['srv_session_duration'].register(key, model)
+    def register_srv_activity_window(key: str, model: Type[SrvActivityWindowGenerator]):
+        AbstractFactory.factories['srv_activity_window'].register(key, model)
 
     @staticmethod
-    def create_srv_session_duration(key: str, **kwargs) -> ServiceSessionDuration:
-        return AbstractFactory.factories['srv_session_duration'].create(key, **kwargs)
+    def create_srv_activity_window(key: str, **kwargs) -> SrvActivityWindowGenerator:
+        return AbstractFactory.factories['srv_activity_window'].create(key, **kwargs)
+
+    @staticmethod
+    def register_srv_req_generator(key: str, model: Type[SrvRequestGenerator]):
+        AbstractFactory.factories['srv_req_generator'].register(key, model)
+
+    @staticmethod
+    def create_srv_req_generator(key: str, **kwargs) -> SrvRequestGenerator:
+        return AbstractFactory.factories['srv_req_generator'].create(key, **kwargs)
+
+    @staticmethod
+    def register_optimizer(key: str, model: Type[Optimizer]):
+        AbstractFactory.factories['optimizer'].register(key, model)
+
+    @staticmethod
+    def create_optimizer(key: str, **kwargs) -> Optimizer:
+        return AbstractFactory.factories['optimizer'].create(key, **kwargs)
+
+    @staticmethod
+    def register_cost_function(key: str, model: Type[CostFunction]):
+        AbstractFactory.factories['cost_function'].register(key, model)
+
+    @staticmethod
+    def create_cost_function(key: str, **kwargs) -> CostFunction:
+        return AbstractFactory.factories['cost_function'].create(key, **kwargs)
+
+    @staticmethod
+    def register_move_function(key: str, model: Type[MoveFunction]):
+        AbstractFactory.factories['move_function'].register(key, model)
+
+    @staticmethod
+    def create_move_function(key: str, **kwargs) -> MoveFunction:
+        return AbstractFactory.factories['move_function'].create(key, **kwargs)

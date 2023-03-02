@@ -5,7 +5,7 @@ from typing import Optional, Tuple
 def euclidean_distance(a: Tuple[float, ...], b: Tuple[float, ...]) -> float:
     """Computes the euclidean distance between two points."""
     assert len(a) == len(b)
-    return sqrt(sum([pow(x[0] - x[1], 2) for x in zip(a, b)]))
+    return sqrt(sum(pow(x[0] - x[1], 2) for x in zip(a, b)))
 
 
 def from_natural_to_db(x: float) -> Optional[float]:

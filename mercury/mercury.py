@@ -1,91 +1,146 @@
-from math import ceil
-from typing import Optional
-from .allocation_manager import AllocationManager
-from .fog_model import FogModel
+from __future__ import annotations
+import datetime
+from .optimization.allocation_manager import AllocationManager
+from .config.config import MercuryConfig, TransceiverConfig
+from .model.model import MercuryModelABC
+from .visualization import *
+from xdevs.sim import Coordinator
 
 
 class Mercury:
-    """M&S&O Framework of Fog Computing scenarios for Data Stream Analytics"""
-
-    def __init__(self, name: str = 'mercury'):
-        """initialization method for Mercury simulator.
-        :param name: Mercury instance name
+    def __init__(self, model: MercuryModelABC):
         """
-        self.name = name
-        self.allocation_manager: Optional[AllocationManager] = None
-        self.fog_model: FogModel = FogModel(name + '_fog_model')
+        M&S&O Framework of Fog Computing scenarios for Data Stream Analytics.
+        :param model:
+        """
+        self.allocation_manager: AllocationManager | None = None
+        self.model: MercuryModelABC = model
 
-        self.standard_edc_config = dict()
+    @property
+    def config(self) -> MercuryConfig:
+        return self.model.config
 
-    def define_standard_edc_config(self, edc_racks_map, resource_manager_config, power_sources=None,
-                                   power_storage_name=None, power_storage_config=None, env_temp=298):
-        for rack_id, rack_conf in edc_racks_map.items():
-            rack_type = rack_conf[0]
-            p_units_list = rack_conf[1]
-            if rack_type not in self.fog_model.cooler_configs:
-                raise AssertionError("Rack type for rack {} is not defined".format(rack_id))
-            for p_unit in p_units_list:
-                if p_unit not in self.fog_model.pu_configs:
-                    raise AssertionError("Processing Unit that conforms the EDC is not defined")
-        self.standard_edc_config = {
-            'edc_racks_map': edc_racks_map,
-            'r_manager_config': resource_manager_config,
-            'power_sources': power_sources,
-            'power_storage_name': power_storage_name,
-            'power_storage_config': power_storage_config,
-            'env_temp': env_temp
-        }
-
-    def init_allocation_manager(self, data, time_window=60, grid_res=40):
+    # TODO mover el allocation manager a config?
+    def init_allocation_manager(self, data, time_window: float = 60, grid_res: float = 40):
         self.allocation_manager = AllocationManager(data, time_window, grid_res)
 
-    def auto_add_aps(self, prefix='ap_', plot=False):
+    def auto_add_aps(self, prefix: str = 'ap', plot: bool = False,
+                     xh_trx: TransceiverConfig = None, acc_trx: TransceiverConfig = None):
+        if self.config.gws_config is None:
+            raise ValueError('You must first define a configuration for gateways')
         self.allocation_manager.allocate_aps(plot)
         aps = self.allocation_manager.aps
         for i in range(aps.shape[0]):
             x = aps[i, 0]
             y = aps[i, 1]
             ap_location = (x, y)
-            self.fog_model.add_ap_config(prefix + str(i), ap_location)
+            self.config.gws_config.add_gateway(f'{prefix}_{i}', ap_location, False, xh_trx, acc_trx)
 
-    def auto_add_edcs(self, p_unit_id, replication_factor=2, prefix='edc_', plot=False):
-        if p_unit_id not in self.fog_model.pu_configs:
-            raise TypeError('Processing unit {} is not yet defined in Fog Model'.format(p_unit_id))
-        p_unit_std_u = 100 * self.fog_model.pu_configs[p_unit_id].std_to_spec_u
-        print('Maximum Standard utilization of processing unit {}: {}'.format(p_unit_id, p_unit_std_u))
-
-        total_u = 0
-        for _, iot_device in self.fog_model.ue_configs.items():
-            for service in iot_device.srv_configs:
-                total_u += service.std_u
-        print('Total required standard std_u: {}'.format(total_u))
-
-        min_p_units = ceil(total_u / p_unit_std_u)
-        print('Minimum number of processing units {} for a single EDC: {}'.format(p_unit_id, min_p_units))
-        self.standard_edc_config['p_units_id_list'] = [p_unit_id] * min_p_units
-
-        self.allocation_manager.allocate_edcs(opt='n', n=replication_factor)
+    def auto_add_edcs(self, n: int = 2, prefix='edc', r_manager_id: str = None, cooler_id: str = None,
+                      edc_temp: float = 298, edc_trx: TransceiverConfig = None, plot=False):
+        self.allocation_manager.allocate_edcs(opt='n', n=n)
         edcs = self.allocation_manager.edcs
         for i in range(edcs.shape[0]):
             x = edcs[i, 0]
             y = edcs[i, 1]
             edc_location = (x, y)
-            self.add_edc(prefix + str(i), edc_location)
+            self.config.edcs_config.add_edc_config(f'{prefix}_{i}', edc_location, r_manager_id,
+                                                   cooler_id, edc_temp, edc_trx)
         if plot:
             self.allocation_manager.plot_scenario()
 
-    def add_edc(self, edc_id, edc_location, crosshaul_trx=None):
-        self.fog_model.add_edc_config(edc_id, edc_location, edc_trx=crosshaul_trx,
-                                      **self.standard_edc_config)
+    def start_simulation(self, time_interv: float = 10000, log_time: bool = False):
+        """ Initialize Mercury xDEVS coordinator """
+        start_date = datetime.datetime.now()
+        if not self.model.built:
+            self.model.build()
 
-    def add_transducers(self, transducer, **kwargs):
-        self.fog_model.add_transducers(transducer, **kwargs)
+        self.coordinator = Coordinator(self.model)
+        for transducer in self.model.transducers:
+            self.coordinator.add_transducer(transducer)
+        self.coordinator.initialize()
 
-    def fog_model_quick_build(self, default_location=(0, 0), lite=False, shortcut=False):
-        if self.fog_model.core_config is None:
-            self.fog_model.add_core_config(default_location)
-        if self.fog_model.xh_config is None:
-            self.fog_model.add_xh_config()
-        if self.fog_model.radio_config is None:
-            self.fog_model.add_radio_config()
-        self.fog_model.build(lite, shortcut)
+        finish_date = datetime.datetime.now()
+        engine_time = finish_date - start_date
+        if log_time:
+            print("*********************")
+            print(f'It took {engine_time} seconds to create the engine')
+            print("*********************")
+
+        start_date = datetime.datetime.now()
+        self.coordinator.simulate_time(time_interv=time_interv)
+        finish_date = datetime.datetime.now()
+        sim_time = finish_date - start_date
+        if log_time:
+            print("*********************")
+            print(f'It took {sim_time} seconds to simulate')
+            print("*********************")
+        for transducer in self.model.transducers:
+            transducer.exit()
+        return engine_time, sim_time
+
+    @staticmethod
+    def plot_srv_delay(dirname: str, sep: str = ',', client_id: str = None,
+                       service_id: str = None, req_type: str = None, alpha: float = 1):
+        df = pd.read_csv(f'{dirname}/transducer_srv_report_events.csv', sep=sep)
+        if client_id is not None:
+            df = df[df['client_id'] == client_id]
+        if service_id is not None:
+            df = df[df['service_id'] == service_id]
+        if req_type is not None:
+            df = df[df['req_type'] == req_type]
+        plot_service_delay(df['time'], df['t_delay'], client_id, service_id, req_type, alpha)
+
+    @staticmethod
+    def plot_edc_power_demand(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['power_demand'], stacked=stacked, alpha=alpha)
+
+    @staticmethod
+    def plot_edc_it_power(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['it_power'],
+                       stacked=stacked, alpha=alpha, nature='Demand (only IT)')
+
+    @staticmethod
+    def plot_edc_cooling_power(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['edc_id'], df['cooling_power'],
+                       stacked=stacked, alpha=alpha, nature='Demand (only Cooling)')
+
+    @staticmethod
+    def plot_edc_power_consumption(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_consumption'],
+                       stacked=stacked, alpha=alpha, nature='Consumption')
+
+    @staticmethod
+    def plot_edc_power_storage(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_storage'],
+                       stacked=stacked, alpha=alpha, nature='Storage')
+
+    @staticmethod
+    def plot_edc_power_generation(path: str, sep: str = ',', stacked: bool = False, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_power(df['time'], df['consumer_id'], df['power_generation'],
+                       stacked=stacked, alpha=alpha, nature='Generation')
+
+    @staticmethod
+    def plot_edc_energy_stored(path: str, sep: str = ',', alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        plot_edc_energy(df['time'], df['consumer_id'], df['energy_stored'], alpha=alpha)
+
+    @staticmethod
+    def plot_network_bw(path: str, sep: str = ',', node_from: str = None, node_to: str = None, alpha: float = 1):
+        df = pd.read_csv(path, sep=sep)
+        subtitle = None
+        if node_from is not None:
+            df = df[df['node_from'] == node_from]
+            subtitle = f'(from {node_from}'
+        if node_to is not None:
+            df = df[df['node_to'] == node_to]
+            subtitle = f'(to {node_to}' if subtitle is None else f'{subtitle} to {node_to}'
+        if subtitle is not None:
+            subtitle = f'{subtitle})'
+        plot_network_bw(df['time'], df['bandwidth'], df['rate'], df['eff'], subtitle, alpha)

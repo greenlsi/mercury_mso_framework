@@ -1,0 +1,178 @@
+{
+  "acc_config": {
+    "wireless_div_id": "equal",
+    "wireless_dl_link": {
+      "bandwidth": 100e6,
+      "carrier_freq": 33e9,
+      "att_id": "fspl",
+      "noise_id": "thermal"
+    },
+    "wireless_ul_link": {
+      "bandwidth": 100e6,
+      "carrier_freq": 33e9,
+      "att_id": "fspl",
+      "noise_id": "thermal"
+    }
+  },
+  "services": {
+    "adas": {
+      "cool_down": 1,
+      "t_deadline": 0.1,
+      "activity_gen_id": "periodic",
+      "activity_gen_config": {
+        "period": 10
+      },
+      "activity_window_id": "constant",
+      "activity_window_config": {
+        "length": 9
+      },
+      "req_gen_id": "periodic",
+      "req_gen_config": {
+        "period": 1
+      },
+      "sess_config": {
+        "t_deadline": 3,
+        "stream": false
+      }
+    }
+  },
+  "edge_fed_config": {
+    "mapping_id": "closest",
+    "mapping_config": {},
+    "congestion": 1,
+    "srv_window_size": {
+      "adas": 10
+    }
+  },
+  "edc_pus": {
+    "pu": {
+      "t_on": 2,
+      "t_off": 2,
+      "pwr_config": {
+        "power": 300
+      },
+      "services": {
+        "adas": {
+          "max_parallel_tasks": 5,
+          "proc_t_id": "constant",
+          "proc_t_config":{
+            "proc_t": [0.1, 0.15, 0.2, 0.25, 0.3]
+          },
+          "pwr_id": "idle_active",
+          "pwr_config": {
+            "idle_power": 310,
+            "active_power": 320
+          }
+        }
+      }
+    }
+  },
+  "edc_r_managers": {
+    "always_off": {
+      "standby": false
+    },
+    "always_on": {
+      "standby": true
+    }
+  },
+  "core": {
+    "location": [50, 50]
+  },
+  "gateways": {
+    "ap_1": {
+      "location": [25, 25],
+      "wired": false
+    },
+    "ap_2": {
+      "location": [50, 25],
+      "wired": true
+    },
+    "ap_3": {
+      "location": [75, 25],
+      "wired": false
+    }
+  },
+  "edcs": {
+    "edc": {
+      "location": [50, 25],
+      "pus": {
+        "pu_1": "pu",
+        "pu_2": "pu",
+        "pu_3": "pu"
+      },
+      "r_manager_id": "always_off"
+    }
+  },
+  "cloud_config": {
+    "cloud_id": "cloud",
+    "delay_id": "constant",
+    "delay_config": {
+      "prop_delay": 0.3
+    },
+    "srv_configs": {
+      "adas": {
+        "profiling_window": 20,
+        "proc_t_id": "constant",
+        "proc_t_config": {
+          "proc_t": 0.3
+        }
+      }
+    }
+  },
+  "clients_config": {
+    "srv_max_guard": 0,
+    "client_generators": [
+      {
+        "generator_id": "synthetic",
+        "services": [
+          "adas"
+        ],
+        "generator_config": {
+          "generator_id": "synth",
+          "instant_generation": true,
+          "t_start": 2,
+          "t_end": 50,
+          "synth_generation_id": "constant",
+          "synth_generation_config": {
+            "period": 1
+          },
+          "synth_destruction_id": "constant",
+          "synth_destruction_config": {
+            "period": 20
+          },
+          "synth_location_box": {
+            "min_x": -50,
+            "max_x": 50,
+            "min_y": -50,
+            "max_y": 50
+          },
+          "synth_location_id": "gaussian",
+          "synth_location_config": {
+            "mu_x": 50,
+            "sigma_x": 1,
+            "mu_y": 10
+          },
+          "synth_mobility_id": "gradient",
+          "synth_mobility_config": {
+            "synth_timestep_id": "constant",
+            "synth_timestep_config": {
+              "period": 2
+            },
+            "synth_gradient_id": "constant",
+            "synth_gradient_config": {
+              "x": 2,
+              "y": 1
+            },
+            "synth_spurious_id": "gaussian",
+            "synth_spurious_config": {
+              "mu_x": 0,
+              "sigma_x": 0.1,
+              "mu_y": 1,
+              "sigma_y": 0.2
+            }
+          }
+        }
+      }
+    ]
+  }
+}

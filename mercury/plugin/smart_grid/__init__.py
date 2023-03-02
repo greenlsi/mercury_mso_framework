@@ -1,3 +1,3 @@
-from .provider import EnergyProvider
-from .pwr_source import PowerSource
-from .consumption_manager import ConsumptionManager
+from .energy_cost import EnergyCostGenerator
+from .consumer_manager import ConsumerManager
+from .pwr_generation import PowerGenerationGenerator

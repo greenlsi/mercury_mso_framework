@@ -3,31 +3,43 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-aux = {
-    'get_server': 'Get server delay',
-    'start_session': 'Start session delay',
-    'stop_session': 'Stop session delay',
-    'srv_request': 'Service request delay',
+REQ_TYPES = {
+    'OpenSessRequest': 'Open session delay',
+    'CloseSessRequest': 'Close session delay',
+    'SrvRequest': 'Service request delay',
 }
 
 
-def plot_ue_service_delay(time, delay, ue_id=None, service_id=None, action=None, alpha=1):
-    delay_ = apply_ema(delay, alpha)
-    plt.plot(time, delay_)
+def plot_service_delay(dirname: str, sep: str = ',', client_id: str = None,
+                       service_id: str = None, req_type: str = None, alpha: float = 1):
+    df = pd.read_csv(f'{dirname}/transducer_srv_report_events.csv', sep=sep)
+    if client_id is not None:
+        df = df[df['client_id'] == client_id]
+    if service_id is not None:
+        df = df[df['service_id'] == service_id]
+    if req_type is not None:
+        df = df[df['req_type'] == req_type]
+    if alpha != 1:
+        df['t_delay'] = df['t_delay'].ewm(alpha=alpha).mean()
+
+    plt.plot(df['time'], df['t_delay'])
+
+    title = REQ_TYPES.get(req_type, 'Delay')
+    if client_id is not None:
+        title = f'{title} perceived by client {client_id}'
+    if service_id is not None:
+        title = f'{title} for service {service_id}'
+    if alpha < 1:
+        alpha_char = r'$\alpha$'
+        title = f'{title} (EMA,{alpha_char}={alpha})'
+    plt.title(title)
     plt.xlabel('time [s]', fontsize=12)
     plt.ylabel('delay [s]', fontsize=12)
-    title = aux.get(action, 'Delay')
-    if ue_id is not None:
-        title += ' perceived by UE {}'.format(ue_id)
-    if service_id is not None:
-        title += ' for service {}'.format(service_id)
-    if alpha < 1:
-        title += ' (EMA,alpha={})'.format(alpha)
-    plt.title(title)
     plt.show()
 
 
-def plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, link='Uplink', alpha=1):
+def plot_network_bw(time: pd.Series, bandwidth: pd.Series, rate: pd.Series,
+                    efficiency: pd.Series, subtitle: str = None, alpha: float = 1):
     bandwidth_ = apply_ema(bandwidth, alpha)
     rate_ = apply_ema(rate, alpha)
     efficiency_ = apply_ema(efficiency, alpha)
@@ -35,7 +47,7 @@ def plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, link='Uplink', alph
     plt.plot(time, rate_)
     plt.xlabel('time [s]', fontsize=12)
     plt.legend(['bandwidth [Hz]', 'bitrate [bps]'], prop={'size': 12})
-    title = '{} bandwidth and bit rate'.format(link)
+    title = 'Bandwidth and bit rate' if subtitle is None else f'Bandwidth and bit rate {subtitle}'
     if alpha < 1:
         title += ' (EMA,alpha={})'.format(alpha)
     plt.title(title)
@@ -44,26 +56,11 @@ def plot_bw(time, ue_id, ap_id, bandwidth, rate, efficiency, link='Uplink', alph
     plt.plot(time, efficiency_)
     plt.xlabel('time [s]', fontsize=12)
     plt.ylabel('spectral efficiency [bps/Hz]', fontsize=12)
-    title = '{} spectral efficiency'.format(link)
+    title = 'Spectral efficiency' if subtitle is None else f'Spectral efficiency {subtitle}'
     if alpha < 1:
         title += ' (EMA,alpha={})'.format(alpha)
     plt.title(title)
     plt.show()
-
-
-def plot_edc_utilization(time, edc_id, utilization, stacked=False, alpha=1):
-    title = 'Edge Data Centers Utilization Factor'
-    if stacked:
-        title = 'Stacked ' + title
-    graph_data = {
-        'xlabel': 'time [s]',
-        'ylabel': 'EDC utilization [%]',
-        'title': title
-    }
-    if stacked:
-        stacked_graph(time, edc_id, utilization, graph_data, alpha)
-    else:
-        multiple_graph(time, edc_id, utilization, graph_data, alpha)
 
 
 def plot_edc_power(time, edc_id, power, stacked=False, alpha=1, nature='Demand'):

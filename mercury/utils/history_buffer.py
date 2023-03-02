@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from math import inf
 from typing import Any, Callable, Dict
@@ -18,7 +19,13 @@ class EventHistoryBuffer:
         """
         self.pointer = 0
         self.t_column: str = kwargs.get('t_column', 'time')
-        history: pd.DataFrame = kwargs.get('history').sort_values(by=self.t_column, ascending=True)
+        if 'history' in kwargs:
+            history: pd.DataFrame = kwargs['history']
+        else:
+            filepath: str = kwargs['filepath']
+            sep: str = kwargs.get('sep', ',')
+            history = pd.read_csv(filepath, sep=sep)
+        history = history.sort_values(by=self.t_column, ascending=True)
         t_init: float = kwargs.get('t_init', 0)
         t_start: float = kwargs.get('t_start', 0)
         t_end: float = kwargs.get('t_end', inf)
