@@ -64,3 +64,16 @@ class TabuSearch(Optimizer, ABC):
         if best_neighbor is not None:
             os.system(f'cp {best_neighbor.config_file} {os.path.join(iter_dir, "config.json")}')
         return min(scores, key=lambda x: x.cost, default=None)
+
+    def acceptance_p(self, neighbor: OptimizerState) -> float:
+        """
+        Returns the probability to move the current state to a new neighbor.
+        If neighbor is accepted, then it is added to the tabu list.
+
+        :param neighbor: a state
+        :return: acceptance probability
+        """
+        if neighbor.cost < self.current_state.cost:
+            self.tabu_list.append(neighbor.raw_config)
+            return True
+        return False
