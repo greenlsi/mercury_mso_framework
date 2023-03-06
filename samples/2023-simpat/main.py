@@ -5,6 +5,9 @@ T_END = 1212822000
 N_ITERS = 300
 
 OPTIMIZERS = {
+    'optimizer': {
+        'optimizer_id': 'optimizer',
+    },
     'simanneal': {
         'optimizer_id': 'simulated_annealing',
         't_max': 200,
@@ -12,8 +15,7 @@ OPTIMIZERS = {
     },
     'stc_hill': {
         'optimizer_id': 'stc_hill_climbing',
-        'temp': .1
-        ,
+        'temp': .1,
     },
     'tabu': {
         'optimizer_id': 'tabu_search',

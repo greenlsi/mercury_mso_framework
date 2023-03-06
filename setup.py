@@ -154,6 +154,7 @@ setup(
             'n_pus = mercury.plugin.optimization.move_function:MoveProcessingUnits',
         ],
         'mercury.optimization.optimizer.plugins': [
+            'optimizer = mercury.plugin.optimization.optimizer.optimizer:Optimizer',
             'simulated_annealing = mercury.plugin.optimization.optimizer.simulated_annealing:SimulatedAnnealing',
             'stc_hill_climbing = mercury.plugin.optimization.optimizer.stc_hill_climbing:StochasticHillClimbing',
             'tabu_search = mercury.plugin.optimization.optimizer.tabu_search:TabuSearch',

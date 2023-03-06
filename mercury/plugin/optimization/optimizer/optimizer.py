@@ -1,7 +1,6 @@
 from __future__ import annotations
 import json
 import os.path
-from abc import ABC
 from mercury.config import MercuryConfig
 from mercury.msg.packet import PacketInterface, AppPacket
 from random import random
@@ -67,7 +66,7 @@ class OptimizerState:
         return self._cost
 
 
-class Optimizer(ABC):
+class Optimizer:
     def __init__(self, **kwargs):
         """
         Base optimizer class.
@@ -82,7 +81,7 @@ class Optimizer(ABC):
         :param Type[PacketInterface] p_type: package type. By default, it is set to AppPacket.
         :param kwargs: any additional parameter required by the class specialization.
         """
-        self.state_history: list[OptimizerState] = list()
+        self.current_state: OptimizerState | None = None
         self.best_state: OptimizerState | None = None
         self.n_iter: int = 0
 
@@ -102,14 +101,9 @@ class Optimizer(ABC):
         self.initial_state = OptimizerState(self.cost_function, raw_config, initial_state_dir,
                                             self.interval, self.lite, self.p_type)
 
-    @property
-    def current_state(self) -> OptimizerState | None:
-        if self.state_history:
-            return self.state_history[-1]
-
     def reset(self):
         """Resets the variables that are altered on a per-run basis of the algorithm"""
-        self.state_history = [self.initial_state]
+        self.current_state = self.initial_state
         self.best_state = self.current_state
         self.n_iter = 0
 
@@ -125,7 +119,7 @@ class Optimizer(ABC):
             new_raw_config = self.move_function.move(prev_raw_state)
         return new_raw_config
 
-    def new_neighbor(self, prev_state: OptimizerState) -> OptimizerState | None:
+    def new_candidate(self, prev_state: OptimizerState) -> OptimizerState | None:
         new_raw_neighbor = self.new_raw_neighbor(prev_state.raw_config)
         if new_raw_neighbor is None:
             return None
@@ -141,7 +135,7 @@ class Optimizer(ABC):
             log_path = os.path.join(self.base_dir, 'optimization_log.csv')
             file = open(log_path, 'w', newline='')
             csv_writer = csv.writer(file, delimiter=',')
-            csv_writer.writerow(['n_iter', 't_start', 't_stop', 'neighbor_cost',
+            csv_writer.writerow(['n_iter', 't_start', 't_stop', 'candidate_cost',
                                  'acceptance_p', 'accepted', 'current_cost', 'best_cost'])
             file.flush()
         for i in range(n_iterations):
@@ -166,24 +160,24 @@ class Optimizer(ABC):
 
     def run_iteration(self, csv_writer) -> str | None:
         t_start = time()
-        neighbor = self.new_neighbor(self.current_state)
-        if neighbor is None:
-            return 'UNABLE TO GENERATE A VALID NEIGHBOR'
-        p = self.acceptance_p(neighbor)
+        candidate = self.new_candidate(self.current_state)
+        if candidate is None:
+            return 'UNABLE TO GENERATE A VALID CANDIDATE'
+        p = self.acceptance_p(candidate)
         accepted = p >= random()
         if accepted:
-            self.state_history.append(neighbor)
+            self.current_state = candidate
         t_stop = time()
         if csv_writer is not None:
-            csv_writer.writerow([self.n_iter, t_start, t_stop, neighbor.cost, p,
+            csv_writer.writerow([self.n_iter, t_start, t_stop, candidate.cost, p,
                                  accepted, self.current_state.cost, self.best_state.cost])
         return None
 
-    def acceptance_p(self, neighbor: OptimizerState) -> float:
+    def acceptance_p(self, candidate: OptimizerState) -> float:
         """
-        Returns the probability to move the current state to a new neighbor.
+        Returns the probability to move the current state to a new candidate.
 
-        :param neighbor: a state
+        :param candidate: a state
         :return: acceptance probability
         """
-        return 1 if neighbor.cost < self.current_state.cost else 0
+        return 1 if candidate.cost < self.current_state.cost else 0

@@ -15,8 +15,8 @@ class StochasticHillClimbing(Optimizer, ABC):
         self.temp: float = kwargs.get('temp', .01)  # TODO justify default value
         super().__init__(**kwargs)
 
-    def acceptance_p(self, neighbor: OptimizerState) -> float:
+    def acceptance_p(self, candidate: OptimizerState) -> float:
         try:
-            return 1 / (1 + exp(-(neighbor.cost - self.current_state.cost) / self.temp))
+            return 1 / (1 + exp(-(candidate.cost - self.current_state.cost) / self.temp))
         except OverflowError:
             return 1

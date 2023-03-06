@@ -46,9 +46,9 @@ class SimulatedAnnealing(Optimizer):
         super().reset()
         self.current_t = self.t_max
 
-    def acceptance_p(self, neighbor: OptimizerState) -> float:
+    def acceptance_p(self, candidate: OptimizerState) -> float:
         try:
-            return exp(-(neighbor.cost - self.current_state.cost) / self.current_t)
+            return exp(-(candidate.cost - self.current_state.cost) / self.current_t)
         except OverflowError:
             return 1
 

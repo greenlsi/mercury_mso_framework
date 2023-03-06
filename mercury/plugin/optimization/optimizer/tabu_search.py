@@ -32,7 +32,7 @@ class TabuSearch(Optimizer, ABC):
         _ = state.cost
         states.append(state)
 
-    def new_neighbor(self, prev_state: OptimizerState) -> OptimizerState | None:
+    def new_candidate(self, prev_state: OptimizerState) -> OptimizerState | None:
         neighbors = list()
         iter_dir = os.path.join(self.base_dir, f'iter_{self.n_iter}')
         if os.path.exists(iter_dir):
@@ -65,15 +65,15 @@ class TabuSearch(Optimizer, ABC):
             os.system(f'cp {best_neighbor.config_file} {os.path.join(iter_dir, "config.json")}')
         return min(scores, key=lambda x: x.cost, default=None)
 
-    def acceptance_p(self, neighbor: OptimizerState) -> float:
+    def acceptance_p(self, candidate: OptimizerState) -> float:
         """
-        Returns the probability to move the current state to a new neighbor.
-        If neighbor is accepted, then it is added to the tabu list.
+        Returns the probability to move the current state to a new candidate.
+        If candidate is accepted, then it is added to the tabu list.
 
-        :param neighbor: a state
+        :param candidate: a state
         :return: acceptance probability
         """
-        if neighbor.cost < self.current_state.cost:
-            self.tabu_list.append(neighbor.raw_config)
-            return True
-        return False
+        if candidate.cost < self.current_state.cost:
+            self.tabu_list.append(candidate.raw_config)
+            return 1
+        return 0
