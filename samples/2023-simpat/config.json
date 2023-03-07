@@ -196,8 +196,8 @@
       },
       "sg_config": {
         "manager_config": {
-          "max_charge_cost": 19e-6,
-          "min_discharge_cost": 37e-6
+          "max_charge_cost": 14e-6,
+          "min_discharge_cost": 59e-6
         },
         "manager_id": "min_max",
         "provider_id": "provider",
@@ -243,8 +243,8 @@
       },
       "sg_config": {
         "manager_config": {
-          "max_charge_cost": 19e-6,
-          "min_discharge_cost": 37e-6
+          "max_charge_cost": 14e-6,
+          "min_discharge_cost": 59e-6
         },
         "manager_id": "min_max",
         "provider_id": "provider",
@@ -290,8 +290,8 @@
       },
       "sg_config": {
         "manager_config": {
-          "max_charge_cost": 19e-6,
-          "min_discharge_cost": 37e-6
+          "max_charge_cost": 14e-6,
+          "min_discharge_cost": 59e-6
         },
         "manager_id": "min_max",
         "provider_id": "provider",
