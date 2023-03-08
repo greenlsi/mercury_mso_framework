@@ -113,14 +113,14 @@ class Optimizer:
     def check_preconditions(self, state: dict[str, Any]) -> bool:
         return not self.preconditions or all(precondition(state) for precondition in self.preconditions)
 
-    def new_raw_neighbor(self, prev_raw_state: dict[str, Any]) -> dict[str, Any] | None:
+    def new_raw_candidate(self, prev_raw_state: dict[str, Any]) -> dict[str, Any] | None:
         new_raw_config = self.move_function.move(prev_raw_state)
         while not self.check_preconditions(new_raw_config):
             new_raw_config = self.move_function.move(prev_raw_state)
         return new_raw_config
 
     def new_candidate(self, prev_state: OptimizerState) -> OptimizerState | None:
-        new_raw_neighbor = self.new_raw_neighbor(prev_state.raw_config)
+        new_raw_neighbor = self.new_raw_candidate(prev_state.raw_config)
         if new_raw_neighbor is None:
             return None
         base_dir = os.path.join(self.base_dir, f'iter_{self.n_iter}')

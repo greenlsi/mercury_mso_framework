@@ -1,10 +1,9 @@
 from __future__ import annotations
-from abc import ABC
 from math import exp
 from .optimizer import Optimizer, OptimizerState
 
 
-class StochasticHillClimbing(Optimizer, ABC):
+class StochasticHillClimbing(Optimizer):
     def __init__(self, **kwargs):
         """
         Stochastic hill climbing optimizer.
