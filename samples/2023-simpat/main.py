@@ -31,7 +31,7 @@ if __name__ == '__main__':
         decision_support = DecisionSupport('config.json', opt_id, T_END - T_START)
 
         decision_support.create_cost_function('energy')
-        decision_support.create_move_function('charge_discharge', n_edcs=2, max_val=59,
+        decision_support.create_move_function('charge_discharge', n_edcs=3, max_val=59,
                                               min_val=14, max_gradient=5, scale=1e-6)
 
         decision_support.create_optimizer(**opt_config)
