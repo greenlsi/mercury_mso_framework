@@ -16,6 +16,6 @@ class StochasticHillClimbing(Optimizer):
 
     def acceptance_p(self, candidate: OptimizerState) -> float:
         try:
-            return 1 / (1 + exp(-(candidate.cost - self.current_state.cost) / self.temp))
+            return 1 / (1 + exp((candidate.cost - self.current_state.cost) / self.temp))
         except OverflowError:
             return 1
