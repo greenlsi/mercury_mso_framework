@@ -3,6 +3,7 @@ import json
 import os.path
 from mercury.config import MercuryConfig
 from mercury.msg.packet import PacketInterface, AppPacket
+import multiprocessing
 from random import random
 from time import time
 from typing import Any, Callable, Type
@@ -71,7 +72,8 @@ class Optimizer:
         """
         Base optimizer class.
 
-        :param dict[str, Any] initial_state:
+        :param int n_candidates: number of candidates evaluated in each iteration. By default, it is set to 1.
+        :param bool parallel: if True, it evaluates the candidates in parallel. By default, it is set to True.
         :param float min_cost: minimum cost. If optimizer reaches this minimum, optimization stops. It defaults to None
         :param CostFunction cost_function: cost function used by the optimizer. It tries to minimize it.
         :param MoveFunction move_function: scenario move function.
@@ -84,6 +86,12 @@ class Optimizer:
         self.current_state: OptimizerState | None = None
         self.best_state: OptimizerState | None = None
         self.n_iter: int = 0
+
+        self.n_candidates: int = kwargs.get('n_candidates', 1)
+        if self.n_candidates < 1:
+            raise ValueError('n_candidates must be greater than 0')
+        self.parallel: bool = kwargs.get('parallel', False) and self.n_candidates > 1
+        self.manager = multiprocessing.Manager() if self.parallel else None
 
         self.min_cost: float | None = kwargs.get('min_cost')
         self.cost_function: CostFunction = kwargs['cost_function']
@@ -100,6 +108,11 @@ class Optimizer:
         initial_state_dir = os.path.join(self.base_dir, 'initial_state')
         self.initial_state = OptimizerState(self.cost_function, raw_config, initial_state_dir,
                                             self.interval, self.lite, self.p_type)
+
+    @staticmethod
+    def cost_and_append(state: OptimizerState, states: list[OptimizerState]):
+        _ = state.cost
+        states.append(state)
 
     def reset(self):
         """Resets the variables that are altered on a per-run basis of the algorithm"""
@@ -120,12 +133,42 @@ class Optimizer:
         return new_raw_config
 
     def new_candidate(self, prev_state: OptimizerState) -> OptimizerState | None:
-        new_raw_neighbor = self.new_raw_candidate(prev_state.raw_config)
-        if new_raw_neighbor is None:
+        # create iteration folder
+        iter_dir = os.path.join(self.base_dir, f'iter_{self.n_iter}')
+        if self.n_candidates > 1:
+            if os.path.exists(iter_dir):
+                raise AssertionError(f'directory {iter_dir} should not exist')
+            os.mkdir(iter_dir)
+        # create up to n_candidates candidates
+        candidates = list()
+        for i in range(self.n_candidates):  # as much as n_neighbors
+            raw_candidate = self.new_raw_candidate(prev_state.raw_config)
+            if raw_candidate is not None:
+                candidate_dir = os.path.join(iter_dir, f'candidate_{i}') if self.n_candidates > 1 else iter_dir
+                candidate = OptimizerState(self.cost_function, raw_candidate, candidate_dir,
+                                           self.interval, self.lite, self.p_type)
+                candidates.append(candidate)
+        # if candidates list is empty, we return None
+        if not candidates:
             return None
-        base_dir = os.path.join(self.base_dir, f'iter_{self.n_iter}')
-        return OptimizerState(self.cost_function, new_raw_neighbor, base_dir,
-                              self.interval, self.lite, self.p_type)
+        # If parallel, we evaluate the new neighbors using multiprocessing
+        if self.parallel:
+            scores = self.manager.list()
+            jobs = list()
+            for candidate in candidates:
+                p = multiprocessing.Process(target=Optimizer.cost_and_append, args=(candidate, scores))
+                p.start()
+                jobs.append(p)
+            for t in jobs:
+                t.join()
+        # Otherwise, we do it sequentially
+        else:
+            scores = candidates
+        # Return best candidate
+        best_candidate = min(scores, key=lambda x: x.cost)
+        if self.n_candidates > 1:
+            os.system(f'cp {best_candidate.config_file} {os.path.join(iter_dir, "config.json")}')
+        return best_candidate
 
     def run(self, n_iterations: int, verbose: bool = True, log: bool = True) -> OptimizerState:
         self.reset()

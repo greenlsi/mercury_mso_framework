@@ -15,7 +15,10 @@ class StochasticHillClimbing(Optimizer):
         super().__init__(**kwargs)
 
     def acceptance_p(self, candidate: OptimizerState) -> float:
+        delta_cost = candidate.cost - self.current_state.cost
+        if delta_cost < 0:
+            return 1
         try:
-            return 1 / (1 + exp((candidate.cost - self.current_state.cost) / self.temp))
+            return 1 / (1 + exp(delta_cost / self.temp))
         except OverflowError:
             return 1

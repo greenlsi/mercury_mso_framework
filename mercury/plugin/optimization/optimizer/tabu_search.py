@@ -1,11 +1,10 @@
 from __future__ import annotations
 from collections import deque
 from typing import Any, Deque
-from .optimizer import OptimizerState
-from .parallel import ParallelOptimizer
+from .optimizer import Optimizer, OptimizerState
 
 
-class TabuSearch(ParallelOptimizer):
+class TabuSearch(Optimizer):
     def __init__(self, **kwargs):
         """
         Tabu search optimizer.

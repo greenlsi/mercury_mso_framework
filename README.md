@@ -17,8 +17,8 @@ The code is fully written in Python 3, enabling you to override pre-defined mode
 
 - Clone this repository in your PC: `git clone https://github.com/greenlsi/mercury_mso_framework.git`
 - Once cloned, move to the M&amp;S&amp;O framework folder: `cd mercury_mso_framework`
-- Install all the required Python packages: `pip3 install -r requirements.txt`
-- Install Mercury: `python3 setup.py install`
+- Install all the required Python packages: `python3 `
+- Install Mercury with all the required Python packages: `python3 setup.py install`
 - Move to the SummerSim '20 example directory: `cd samples/summersim-2020`
 - Create the folder that will hold the simulation results of your trial: `mkdir results`
 - Let's run the example!: type `python3 main.py` and let it simulate
@@ -33,4 +33,7 @@ We are still working on this.
 # References
 
 1. Román Cárdenas, Patricia Arroba, Roberto Blanco, Pedro Malagón, José L. Risco-Martín, and José M. Moya, [Mercury: A modeling, simulation, and optimization framework for data stream-oriented IoT applications](https://doi.org/10.1016/j.simpat.2019.102037), Simulation Modelling Practice and Theory, Volume 101, Pages: 102037, ISSN: 1569-190X, Elsevier, May 2020
-2. Román Cárdenas, Patricia Arroba, José M. Moya, and José L. Risco-Martín, [Edge Federation Simulator for Data Stream Analytics](https://dl.acm.org/doi/abs/10.5555/3374138.3374181), Proceedings of the 2019 Summer Simulation Conference, Article No. 43, Pages: 1-12, SCS, July 2019
+2. Román Cárdenas, Patricia Arroba, José L. Risco-Martín, and José M. Moya, [Modeling and simulation of smart grid-aware edge computing federations](https://doi.org/10.1007/s10586-022-03797-8), Cluster Computing, Volume 26, Pages: 719–743, Springer Nature, February 2023
+3. Román Cárdenas, Patricia Arroba, and José L. Risco-Martín, [Bringing AI to the edge: A formal M&amp;S specification to deploy effective IoT architectures](https://doi.org/10.1080/17477778.2020.1863755), Journal of Simulation, Volume 16:5, Pages: 494-511, Taylor and Francis, 2022
+4. Román Cárdenas, Patricia Arroba, José M. Moya, and José L. Risco-Martín, [Multi-faceted modeling in the analysis and optimization of IoT complex systems](https://dl.acm.org/doi/abs/10.5555/3427510.3427537), Proceedings of the 2020 Summer Simulation Conference, Article No. 26, Pages: 1-12, SCS, July 2020
+5. Román Cárdenas, Patricia Arroba, José M. Moya, and José L. Risco-Martín, [Edge Federation Simulator for Data Stream Analytics](https://dl.acm.org/doi/abs/10.5555/3374138.3374181), Proceedings of the 2019 Summer Simulation Conference, Article No. 43, Pages: 1-12, SCS, July 2019
