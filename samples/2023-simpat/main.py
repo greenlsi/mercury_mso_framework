@@ -13,12 +13,10 @@ OPTIMIZERS = {
     'stc_hill_climbing': {
         'temp': .1,
     },
-    'parallel': {
-        'n_candidates': 10,
-    },
     'tabu_search': {
         'n_candidates': 10,
         'tabu_size': 50,
+        'parallel': True,
     },
 }
 
