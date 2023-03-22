@@ -36,7 +36,5 @@ class TabuSearch(Optimizer):
         :param candidate: a state
         :return: acceptance probability
         """
-        if candidate.cost < self.current_state.cost:
-            self.tabu_list.append(candidate.raw_config)  # If we accept it, we append it to the tabu list
-            return 1
-        return 0
+        self.tabu_list.append(candidate.raw_config)  # we add all the candidate neighbors to the tabu list
+        return 1
