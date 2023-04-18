@@ -5,7 +5,6 @@ T_END = 1212822000
 N_ITERS = 300
 
 OPTIMIZERS = {
-    'optimizer': {},
     'simulated_annealing': {
         't_max': 200,
         'schedule_constant': .95,

@@ -8,10 +8,8 @@ from typing import Type
 
 class DecisionSupport:
     def __init__(self, initial_config: str, base_dir: str, interval: float,
-                 lite: bool = True, p_type: Type[PacketInterface] = AppPacket):
-        """
-        Decision support Class for smart grid optimization.
-        """
+                 lite: bool = True, p_type: Type[PacketInterface] = AppPacket, clean: bool = True):
+        """Decision support Class for Edgr Computing scenario optimization."""
         if not os.path.exists(initial_config):
             raise AssertionError(f'{initial_config} does not exist')
         if os.path.exists(base_dir):
@@ -22,6 +20,7 @@ class DecisionSupport:
         self.interval: float = interval
         self.lite: bool = lite
         self.p_type: Type[PacketInterface] = p_type
+        self.clean = clean
 
         self.cost_function: CostFunction | None = None
         self.move_function: MoveFunction | None = None
@@ -41,7 +40,8 @@ class DecisionSupport:
 
         self.optimizer = AbstractFactory.create_optimizer(optimizer_id, **kwargs, cost_function=self.cost_function,
                                                           move_function=self.move_function, interval=self.interval,
-                                                          lite=self.lite, base_dir=self.base_dir, p_type=self.p_type)
+                                                          lite=self.lite, base_dir=self.base_dir,
+                                                          p_type=self.p_type, clean=self.clean)
         
     def run_optimization(self, n_iterations: int, verbose: bool = True, log: bool = True):
         self.optimizer.run(n_iterations, verbose, log)

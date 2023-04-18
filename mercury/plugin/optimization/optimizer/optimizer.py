@@ -13,8 +13,8 @@ import csv
 
 
 class OptimizerState:
-    def __init__(self, cost_function: CostFunction, raw_config: dict[str, Any], base_dir: str,
-                 interval: float, lite: bool = True, p_type: Type[PacketInterface] = AppPacket):
+    def __init__(self, cost_function: CostFunction, raw_config: dict[str, Any], base_dir: str, interval: float,
+                 lite: bool = True, p_type: Type[PacketInterface] = AppPacket, clean: bool = True):
         """
         State configuration for a given optimization.
 
@@ -24,6 +24,7 @@ class OptimizerState:
         :param interval: simulation interval.
         :param lite: if True, simulations are executed in lite mode. It is activated by default.
         :param p_type: communication layer to use if lite is not activated. Defaults to AppPacket.
+        :param clean: if True, the simulation traces are deleted after computing the cost. Defaults to True.
         """
         self.cost_function: CostFunction = cost_function
         self.raw_config: dict[str, Any] = raw_config
@@ -38,6 +39,7 @@ class OptimizerState:
         self.interval: float = interval
         self.lite: bool = lite
         self.p_type: Type[PacketInterface] = p_type
+        self.clean: bool = clean
         self._cost: float | None = None
 
     def __eq__(self, other: OptimizerState):
@@ -64,6 +66,11 @@ class OptimizerState:
             mercury = Mercury(model)
             mercury.start_simulation(time_interv=self.interval, log_time=False)
             self._cost = self.cost_function.cost(self.base_dir)
+            # If clean is active, we remove simulation traces
+            if self.clean:
+                for file in os.listdir(self.base_dir):
+                    if file.endswith('events.csv'):
+                        os.remove(os.path.join(self.base_dir, file))
         return self._cost
 
 
@@ -81,6 +88,7 @@ class Optimizer:
         :param float interval: simulation interval applied to each evaluation.
         :param bool lite: if true, it uses the Mercury lite version.
         :param Type[PacketInterface] p_type: package type. By default, it is set to AppPacket.
+        :param bool clean: If True, simulation traces are deleted after computing the scenario cost. Defaults to True.
         :param kwargs: any additional parameter required by the class specialization.
         """
         self.current_state: OptimizerState | None = None
@@ -105,9 +113,10 @@ class Optimizer:
         self.interval: float = kwargs['interval']
         self.lite: bool = kwargs.get('lite', True)
         self.p_type: Type[PacketInterface] = kwargs.get('p_type', AppPacket)
+        self.clean: bool = kwargs.get('clean', True)
         initial_state_dir = os.path.join(self.base_dir, 'initial_state')
         self.initial_state = OptimizerState(self.cost_function, raw_config, initial_state_dir,
-                                            self.interval, self.lite, self.p_type)
+                                            self.interval, self.lite, self.p_type, self.clean)
 
     @staticmethod
     def cost_and_append(state: OptimizerState, states: list[OptimizerState]):
@@ -146,7 +155,7 @@ class Optimizer:
             if raw_candidate is not None:
                 candidate_dir = os.path.join(iter_dir, f'candidate_{i}') if self.n_candidates > 1 else iter_dir
                 candidate = OptimizerState(self.cost_function, raw_candidate, candidate_dir,
-                                           self.interval, self.lite, self.p_type)
+                                           self.interval, self.lite, self.p_type, self.clean)
                 candidates.append(candidate)
         # if candidates list is empty, we return None
         if not candidates:
