@@ -80,9 +80,9 @@ class Mercury:
         return engine_time, sim_time
 
     @staticmethod
-    def plot_srv_delay(dirname: str, sep: str = ',', client_id: str = None,
+    def plot_srv_delay(path: str, sep: str = ',', client_id: str = None,
                        service_id: str = None, req_type: str = None, alpha: float = 1):
-        df = pd.read_csv(f'{dirname}/transducer_srv_report_events.csv', sep=sep)
+        df = pd.read_csv(path, sep=sep)
         if client_id is not None:
             df = df[df['client_id'] == client_id]
         if service_id is not None:

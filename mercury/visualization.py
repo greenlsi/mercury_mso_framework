@@ -10,19 +10,11 @@ REQ_TYPES = {
 }
 
 
-def plot_service_delay(dirname: str, sep: str = ',', client_id: str = None,
+def plot_service_delay(time: pd.Series, t_delay: pd.Series, client_id: str = None,
                        service_id: str = None, req_type: str = None, alpha: float = 1):
-    df = pd.read_csv(f'{dirname}/transducer_srv_report_events.csv', sep=sep)
-    if client_id is not None:
-        df = df[df['client_id'] == client_id]
-    if service_id is not None:
-        df = df[df['service_id'] == service_id]
-    if req_type is not None:
-        df = df[df['req_type'] == req_type]
-    if alpha != 1:
-        df['t_delay'] = df['t_delay'].ewm(alpha=alpha).mean()
+    t_delay_ = apply_ema(t_delay, alpha)
 
-    plt.plot(df['time'], df['t_delay'])
+    plt.plot(time, t_delay_)
 
     title = REQ_TYPES.get(req_type, 'Delay')
     if client_id is not None:

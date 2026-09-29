@@ -7,7 +7,8 @@ from mercury.msg.packet import AppPacket, NetworkPacket, PhysicalPacket, PacketI
 from mercury.utils.amf import AccessManagementFunction
 from typing import Any, Generic, Type
 from xdevs.models import Coupled
-from xdevs.transducers import Transducer, Transducers
+from xdevs.abc import Transducer
+from xdevs.factory import Transducers
 from .clients import ClientsABC, Clients, ClientsShortcut, ClientsLite, ClientGeneratorModel
 from .cloud import Cloud
 from .edcs import EdgeDataCenters

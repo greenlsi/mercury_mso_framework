@@ -1,4 +1,5 @@
 import mercury.logger as logger
+import logging
 from mercury.config import MercuryConfig
 from mercury.model import MercuryModelABC
 from mercury import Mercury
@@ -16,11 +17,11 @@ T_END = 2000
 if __name__ == '__main__':
     
     # SET LOGGING IF NEEDED
-    logger.set_logger_level('FATAL')
+    logger.set_logger_level(logging.FATAL)
     logger.add_file_handler('mercury.log')
     
     # READ CONFIGURATION FROM JSON FILE
-    config = MercuryConfig.from_json("config.json")
+    config = MercuryConfig.from_json('config.json')
        
     # ONCE THE CONFIGURATION IS DONE, WE BUILD THE DEVS MODEL
     model = MercuryModelABC.new_mercury(config, lite, p_type)

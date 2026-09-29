@@ -1,0 +1,167 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mercury"
+version = "0.2"
+description = "Edge Computing Federation Modeling and Simulation Tool"
+authors = [{ name = "Román Cárdenas Rodríguez", email = "r.cardenas@upm.es" }]
+classifiers = [
+    "Development Status :: 3 Alpha",
+    "License :: OSI Approved :: Apache Software License 2.0 (Apache-2.0)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+]
+dependencies = [
+    "matplotlib>=3.7",
+    "seaborn>=0.12",
+    "pandas>=1.5",
+    "scikit-learn>=1.2",
+    "numpy>=1.17.3",
+    "xdevs==3.0.0",
+]
+
+[project.urls]
+"Bug Reports" = "https://github.com/greenlsi/mercury_mso_framework/issues"
+Source = "https://github.com/greenlsi/mercury_mso_framework"
+Cite = "https://doi.org/10.1016/j.simpat.2019.102037"
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*", "samples", "samples.*"]
+
+[project.entry-points."mercury.cloud.network_delay.plugins"]
+constant = "mercury.plugin.cloud.network_delay:ConstantCloudNetworkDelay"
+gaussian = "mercury.plugin.cloud.network_delay:GaussianCloudNetworkDelay"
+
+[project.entry-points."mercury.cloud.proc_t.plugins"]
+constant = "mercury.plugin.cloud.proc_t:ConstantProcTimeModel"
+gaussian = "mercury.plugin.cloud.proc_t:GaussianProcTimeModel"
+
+[project.entry-points."mercury.smart_grid.consumer_manager.plugins"]
+static = "mercury.plugin.smart_grid.consumer_manager:StaticConsumerManager"
+min_max = "mercury.plugin.smart_grid.consumer_manager:MinDischargeMaxChargeConsumerManager"
+
+[project.entry-points."mercury.smart_grid.energy_cost.plugins"]
+constant = "mercury.plugin.smart_grid.energy_cost:ConstantEnergyCostGenerator"
+history = "mercury.plugin.smart_grid.energy_cost:HistoryEnergyCostGenerator"
+
+[project.entry-points."mercury.smart_grid.pwr_generation.plugins"]
+constant = "mercury.plugin.smart_grid.pwr_generation:ConstantPowerGeneration"
+history = "mercury.plugin.smart_grid.pwr_generation:HistoryPowerGeneration"
+
+[project.entry-points."mercury.smart_grid.optimization.plugins"]
+energy = "mercury.plugin.smart_grid.cost_function:EnergyCostFunction"
+
+[project.entry-points."mercury.edc.cooler.power.plugins"]
+constant = "mercury.plugin.edc.cooler_power:ConstantCoolerPowerModel"
+"2_phase_immersion" = "mercury.plugin.edc.cooler_power:TwoPhaseImmersionCoolerPowerModel"
+
+[project.entry-points."mercury.edc.dyn.demand.plugins"]
+constant = "mercury.plugin.edc.dyn_demand:ConstantSrvDemandEstimator"
+history = "mercury.plugin.edc.dyn_demand:HistorySrvDemandEstimator"
+hybrid = "mercury.plugin.edc.dyn_demand:HybridSrvDemandEstimator"
+
+[project.entry-points."mercury.edc.dyn.slicing.plugins"]
+estimation = "mercury.plugin.edc.dyn_slicing:EstimationSlicing"
+
+[project.entry-points."mercury.edc.pu.mapping.plugins"]
+ff = "mercury.plugin.edc.pu_mapping:FirstFit"
+epu = "mercury.plugin.edc.pu_mapping:EmptiestProcessingUnit"
+fpu = "mercury.plugin.edc.pu_mapping:FullestProcessingUnit"
+spt = "mercury.plugin.edc.pu_mapping:ShortestProcessingTime"
+lpt = "mercury.plugin.edc.pu_mapping:LongestProcessingTime"
+spi = "mercury.plugin.edc.pu_mapping:SmallestPowerIncrement"
+
+[project.entry-points."mercury.edc.server.mapping.plugins"]
+closest = "mercury.plugin.edc.server_mapping:ClosestEDCStrategy"
+emptiest = "mercury.plugin.edc.server_mapping:EmptiestEDCStrategy"
+fullest = "mercury.plugin.edc.server_mapping:FullestEDCStrategy"
+pw_balance = "mercury.plugin.edc.server_mapping:PowerBalanceStrategy"
+highest_pw = "mercury.plugin.edc.server_mapping:HighestPowerStrategy"
+sg_closest = "mercury.plugin.edc.server_mapping:SmartGridClosestEDCStrategy"
+sg_emptiest = "mercury.plugin.edc.server_mapping:SmartGridEmptiestEDCStrategy"
+sg_fullest = "mercury.plugin.edc.server_mapping:SmartGridFullestEDCStrategy"
+
+[project.entry-points."mercury.edc.pu.proc_t.plugins"]
+constant = "mercury.plugin.edc.pu_proc_t:ConstantProcTimeModel"
+round_robin = "mercury.plugin.edc.pu_proc_t:RoundRobinProcTimeModel"
+gaussian = "mercury.plugin.edc.pu_proc_t:GaussianProcTimeModel"
+
+[project.entry-points."mercury.edc.pu.power.plugins"]
+constant = "mercury.plugin.edc.pu_power:ConstantPowerModel"
+idle_active = "mercury.plugin.edc.pu_power:IdleActivePowerModel"
+linear = "mercury.plugin.edc.pu_power:LinearPowerModel"
+static_dyn = "mercury.plugin.edc.pu_power:StaticDynamicPowerModel"
+
+[project.entry-points."mercury.edc.pu.scheduler.plugins"]
+fcfs = "mercury.plugin.edc.pu_scheduler:FirstComeFirstServed"
+sjf = "mercury.plugin.edc.pu_scheduler:ShortestJobFirst"
+ljf = "mercury.plugin.edc.pu_scheduler:LongestJobFirst"
+srtf = "mercury.plugin.edc.pu_scheduler:ShortestRemainingTimeFirst"
+lrtf = "mercury.plugin.edc.pu_scheduler:LongestRemainingTimeFirst"
+edf = "mercury.plugin.edc.pu_scheduler:EarliestDeadlineFirst"
+llf = "mercury.plugin.edc.pu_scheduler:LeastLaxityFirst"
+
+[project.entry-points."mercury.edc.pu.temperature.plugins"]
+constant = "mercury.plugin.edc.pu_temperature:ConstantTemperatureModel"
+
+[project.entry-points."mercury.network.attenuation.plugins"]
+fspl = "mercury.plugin.network.attenuation:FreeSpacePathLossAttenuation"
+fiber = "mercury.plugin.network.attenuation:FiberLinkAttenuation"
+
+[project.entry-points."mercury.network.channel_division.plugins"]
+equal = "mercury.plugin.network.channel_division:EqualChannelDivision"
+proportional = "mercury.plugin.network.channel_division:ProportionalChannelDivision"
+
+[project.entry-points."mercury.network.noise.plugins"]
+thermal = "mercury.plugin.network.noise:ThermalNoise"
+
+[project.entry-points."mercury.mobility.plugins"]
+still = "mercury.plugin.network.mobility:StillNodeMobility"
+"2D_function" = "mercury.plugin.network.mobility:NodeMobility2DFunction"
+gradient = "mercury.plugin.network.mobility:GradientNodeMobility"
+history = "mercury.plugin.network.mobility:HistoryNodeMobility"
+
+[project.entry-points."mercury.client.client_generator.plugins"]
+list = "mercury.plugin.client.client_generator:ListClientGenerator"
+synthetic = "mercury.plugin.client.client_generator:SyntheticClientGenerator"
+history_wired = "mercury.plugin.client.client_generator:HistoryWiredClientGenerator"
+history_wireless = "mercury.plugin.client.client_generator:HistoryWirelessClientGenerator"
+
+[project.entry-points."mercury.client.srv_activity_generator.plugins"]
+single = "mercury.plugin.client.activity_generator:SingleSrvActivityGenerator"
+periodic = "mercury.plugin.client.activity_generator:PeriodicSrvActivityGenerator"
+uniform = "mercury.plugin.client.activity_generator:UniformSrvActivityGenerator"
+gaussian = "mercury.plugin.client.activity_generator:GaussianSrvActivityGenerator"
+exponential = "mercury.plugin.client.activity_generator:ExponentialSrvActivityGenerator"
+lambda = "mercury.plugin.client.activity_generator:LambdaSrvActivityGenerator"
+
+[project.entry-points."mercury.client.srv_activity_window.plugins"]
+constant = "mercury.plugin.client.activity_window:ConstantSrvWindowGenerator"
+uniform = "mercury.plugin.client.activity_window:UniformSrvWindowGenerator"
+gaussian = "mercury.plugin.client.activity_window:GaussianSrvWindowGenerator"
+exponential = "mercury.plugin.client.activity_window:ExponentialSrvWindowGenerator"
+lambda = "mercury.plugin.client.activity_window:LambdaSrvSessionDuration"
+
+[project.entry-points."mercury.client.srv_req_generator.plugins"]
+single = "mercury.plugin.client.req_generator:SingleSrvRequestGenerator"
+periodic = "mercury.plugin.client.req_generator:PeriodicSrvRequestGenerator"
+uniform = "mercury.plugin.client.req_generator:UniformSrvRequestGenerator"
+gaussian = "mercury.plugin.client.req_generator:GaussianSrvRequestGenerator"
+exponential = "mercury.plugin.client.req_generator:ExponentialSrvRequestGenerator"
+lambda = "mercury.plugin.client.req_generator:LambdaSrvRequestGenerator"
+
+[project.entry-points."mercury.optimization.cost_function.plugins"]
+deadlines = "mercury.plugin.optimization.cost_function:DeadlinesCost"
+energy = "mercury.plugin.optimization.cost_function:EnergyCost"
+
+[project.entry-points."mercury.optimization.move_function.plugins"]
+charge_discharge = "mercury.plugin.optimization.move_function:MoveChargeDischarge"
+n_pus = "mercury.plugin.optimization.move_function:MoveProcessingUnits"
+
+[project.entry-points."mercury.optimization.optimizer.plugins"]
+optimizer = "mercury.plugin.optimization.optimizer.optimizer:Optimizer"
+simulated_annealing = "mercury.plugin.optimization.optimizer.simulated_annealing:SimulatedAnnealing"
+stc_hill_climbing = "mercury.plugin.optimization.optimizer.stc_hill_climbing:StochasticHillClimbing"
+tabu_search = "mercury.plugin.optimization.optimizer.tabu_search:TabuSearch"

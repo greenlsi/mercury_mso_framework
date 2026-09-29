@@ -10,17 +10,15 @@ The code is fully written in Python 3, enabling you to override pre-defined mode
 
 # Requirements
 - Python 3.6 or greater
-- All the Python packages listed on the `requirements.txt` file
+- All the Python packages listed on the `pyproject.toml` file
 - The simulator has been tested on Linux and MacOS machines. Compatibility with Windows is not granted
 
 # How to Get Mercury Up and Running?
 
 - Clone this repository in your PC: `git clone https://github.com/greenlsi/mercury_mso_framework.git`
 - Once cloned, move to the M&amp;S&amp;O framework folder: `cd mercury_mso_framework`
-- Install all the required Python packages: `python3 `
-- Install Mercury with all the required Python packages: `python3 setup.py install`
-- Move to the SummerSim '20 example directory: `cd samples/summersim-2020`
-- Create the folder that will hold the simulation results of your trial: `mkdir results`
+- Install Mercury with all the required Python packages: `python3 -m pip install .`
+- Move to the SummerSim '20 example directory: `cd samples/simple`
 - Let's run the example!: type `python3 main.py` and let it simulate
 
 You are more than welcome to read through the `main.py` file and tune different parameters to see their effect on the simulation outcome.

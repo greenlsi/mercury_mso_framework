@@ -1,4 +1,4 @@
-import pkg_resources
+from importlib.metadata import entry_points
 from typing import Dict, Generic, Type, TypeVar
 from .client import ClientGenerator, SrvRequestGenerator, SrvActivityGenerator, SrvActivityWindowGenerator
 from .cloud import CloudNetworkDelay, CloudProcTimeModel
@@ -31,11 +31,11 @@ class Factory(Generic[T]):
     @staticmethod
     def load_plugins(namespace: str) -> dict:
         res = dict()
-        for ep in pkg_resources.iter_entry_points(group=namespace):
+        for ep in entry_points(group=namespace):
             try:
-                res[ep.name] = ep.load(require=True)
-            except pkg_resources.UnknownExtra as ue:
-                raise ValueError(f'Plugin {ep} dependencies resolution failed: {ue}')
+                res[ep.name] = ep.load()
+            except ImportError as ie:
+                raise ValueError(f'Plugin {ep} dependencies resolution failed: {ie}')
         return res
 
 

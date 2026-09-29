@@ -53,7 +53,6 @@ class EdgeDataCenter(Coupled, Generic[PacketInterface]):
         self.add_in_port(self.input_data)
         for out_port in self.output_data, self.output_edc_report, self.output_profile_report:
             self.add_out_port(out_port)
-        self.add_out_port(self.output_edc_report)
         if self.smart_grid:
             self.input_sg_report: Port[EnergyDemand] = Port(EnergyDemand, 'input_sg_report')
             self.output_sg_report: Port[EnergyDemand] = Port(EnergyDemand, 'output_sg_report')

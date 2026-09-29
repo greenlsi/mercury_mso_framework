@@ -38,7 +38,6 @@ class EdgeDataCenters(Coupled, Generic[PacketInterface]):
         self.output_profile_report: Port[EDCProfileReport] = Port(EDCProfileReport, 'output_profile_report')
         for out_port in self.output_data, self.output_edc_report, self.output_profile_report:
             self.add_out_port(out_port)
-        self.add_out_port(self.output_edc_report)
         self.inputs_data: dict[str, Port[PacketInterface]] = dict()
         for edc_id, edc in self.edcs.items():
             self.inputs_data[edc_id] = Port(p_type, f'input_data_{edc_id}')
